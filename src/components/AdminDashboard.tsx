@@ -5,11 +5,8 @@ import {
   CheckCircle2,
   RotateCcw,
   TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
   LineChart,
   Line,
   XAxis,
@@ -21,6 +18,11 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
+import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
+import L from 'leaflet'; // Import Leaflet for marker icons
+import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
 
 interface DashboardStats {
   pendingOrders: number;
@@ -83,6 +85,16 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       bgColor: "bg-red-50 dark:bg-red-900/20",
     },
   ];
+
+  // Set default icon for Leaflet markers
+  const defaultIcon = new L.Icon({
+    iconUrl: markerIcon,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: markerShadow,
+    shadowSize: [41, 41],
+  });
 
   return (
     <div className="space-y-6">
@@ -212,25 +224,24 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         </Card>
       </div>
 
-      {/* Map Placeholder */}
+      {/* Leaflet Map */}
       <Card className="border-0 shadow-sm">
         <CardHeader>
           <CardTitle>Live Driver Tracking</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg h-80 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-[#27AE60]/20 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Truck className="w-8 h-8 text-[#27AE60]" />
-              </div>
-              <p className="text-[#222B2D]/60 dark:text-white/60">
-                Google Maps Integration
-              </p>
-              <p className="text-sm text-[#222B2D]/40 dark:text-white/40">
-                Live driver positions will appear here
-              </p>
-            </div>
-          </div>
+          <MapContainer center={[51.505, -0.09]} zoom={13} style={{ height: "400px", width: "100%" }}>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            {/* Example Marker */}
+            <Marker position={[51.505, -0.09]} icon={defaultIcon}>
+              <Popup>
+                A live driver is here.
+              </Popup>
+            </Marker>
+          </MapContainer>
         </CardContent>
       </Card>
     </div>
