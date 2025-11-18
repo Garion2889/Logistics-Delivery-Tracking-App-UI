@@ -10,12 +10,9 @@ import {
   Sun,
   LogOut,
   Menu,
-  X,
-  Layers,
   Bell,
   MapPin,
   Route,
-  CreditCard,
   BarChart3,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -51,13 +48,10 @@ export function AdminLayout({
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "deliveries", label: "Deliveries", icon: Package },
     { id: "drivers", label: "Drivers", icon: Users },
-    { id: "inventory", label: "Inventory", icon: Layers },
     { id: "tracking", label: "Live Tracking", icon: MapPin },
     { id: "routes", label: "Route Optimization", icon: Route },
-    { id: "payments", label: "Payments", icon: CreditCard },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "returns", label: "Returns", icon: RotateCcw, badge: 3 },
-    { id: "reports", label: "Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 

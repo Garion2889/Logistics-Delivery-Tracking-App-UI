@@ -7,6 +7,9 @@ import { DeliveryDetail } from "./components/DeliveryDetail";
 import { DriverManagement } from "./components/DriverManagement";
 import { DriverDashboard } from "./components/DriverDashboard";
 import { PublicTracking } from "./components/PublicTracking";
+import { RealTimeTrackingPage } from "./components/RealTimeTrackingPage";
+import { RouteOptimizationPage } from "./components/RouteOptimizationPage";
+import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { AssignDriverModal } from "./components/AssignDriverModal";
 import { CreateDriverModal } from "./components/CreateDriverModal";
 import { Toaster } from "./components/ui/sonner";
@@ -220,8 +223,7 @@ export default function AppWithSupabase() {
     activeDeliveries: deliveries.filter((d) => d.status === "in-transit").length,
     completedDeliveries: deliveries.filter((d) => d.status === "delivered").length,
     returns: deliveries.filter((d) => d.status === "returned").length,
-    revenueChange: 12.5,
-    successRate: 94,
+    successRate: deliveries.length > 0 ? Math.round((deliveries.filter((d) => d.status === "delivered").length / deliveries.length) * 100) : 0,
   };
 
   const driverStats = {
@@ -518,18 +520,17 @@ export default function AppWithSupabase() {
               toast.warning(`Deactivate driver: ${driver.name}`);
             }}
           />
+        ) : !loading && currentPage === "tracking" ? (
+          <RealTimeTrackingPage />
+        ) : !loading && currentPage === "routes" ? (
+          <RouteOptimizationPage />
+        ) : !loading && currentPage === "analytics" ? (
+          <AnalyticsDashboard />
         ) : !loading && currentPage === "returns" ? (
           <div className="space-y-6">
             <h1 className="text-[#222B2D] dark:text-white">Returns</h1>
             <p className="text-[#222B2D]/60 dark:text-white/60">
               Returns management coming soon...
-            </p>
-          </div>
-        ) : !loading && currentPage === "reports" ? (
-          <div className="space-y-6">
-            <h1 className="text-[#222B2D] dark:text-white">Reports</h1>
-            <p className="text-[#222B2D]/60 dark:text-white/60">
-              Analytics and reports coming soon...
             </p>
           </div>
         ) : !loading && currentPage === "settings" ? (

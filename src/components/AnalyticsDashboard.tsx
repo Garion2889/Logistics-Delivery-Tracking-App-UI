@@ -268,27 +268,7 @@ export function AnalyticsDashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Revenue
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  ₱{(totalRevenue / 1000).toFixed(0)}K
-                </h3>
-                <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  +8.7%
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-[#27AE60]/10 flex items-center justify-center">
-                <DollarSign className="w-5 h-5 text-[#27AE60]" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+
 
         <Card>
           <CardContent className="p-6">
@@ -359,10 +339,9 @@ export function AnalyticsDashboard() {
 
       {/* Main Analytics Content */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
           <TabsTrigger value="drivers">Drivers</TabsTrigger>
           <TabsTrigger value="regions">Regions</TabsTrigger>
         </TabsList>
@@ -420,78 +399,25 @@ export function AnalyticsDashboard() {
               </CardContent>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Payment Breakdown */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Payment Method Distribution</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={paymentBreakdown}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, value }) => `${name}: ${value}%`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {paymentBreakdown.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {paymentBreakdown.map((method) => (
-                      <div
-                        key={method.name}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: method.color }}
-                          ></div>
-                          <span className="text-[#222B2D] dark:text-white">
-                            {method.name}
-                          </span>
-                        </div>
-                        <span className="text-[#222B2D]/60 dark:text-white/60">
-                          {method.value}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Hourly Activity */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Hourly Activity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={hourlyActivity}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="hour" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="orders" fill="#3498DB" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Hourly Activity */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Hourly Activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourlyActivity}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="hour" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="orders" fill="#3498DB" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
 
@@ -538,68 +464,7 @@ export function AnalyticsDashboard() {
           </Card>
         </TabsContent>
 
-        {/* Revenue Tab */}
-        <TabsContent value="revenue">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue by Region</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={areaCoverage}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="area" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="revenue" fill="#27AE60" name="Revenue (₱)" />
-                      <Bar dataKey="deliveries" fill="#3498DB" name="Deliveries" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
 
-            {/* Revenue Summary Table */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Regional Performance Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {areaCoverage.map((area) => (
-                    <div
-                      key={area.area}
-                      className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700"
-                    >
-                      <div className="flex items-center gap-3">
-                        <MapPin className="w-5 h-5 text-[#27AE60]" />
-                        <div>
-                          <h4 className="text-[#222B2D] dark:text-white">
-                            {area.area}
-                          </h4>
-                          <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                            {area.deliveries} deliveries
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[#222B2D] dark:text-white">
-                          ₱{area.revenue.toLocaleString()}
-                        </p>
-                        <p className="text-sm text-[#27AE60]">
-                          ₱{(area.revenue / area.deliveries).toFixed(0)} avg
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
 
         {/* Drivers Tab */}
         <TabsContent value="drivers">

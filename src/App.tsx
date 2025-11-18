@@ -15,20 +15,8 @@ import { CreateDriverModal } from "./components/CreateDriverModal";
 import { UpdateDeliveryModal } from "./components/UpdateDeliveryModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { ConfirmDialog } from "./components/ConfirmDialog";
-import { InventoryLayout } from "./components/InventoryLayout";
-import { ProductCatalog } from "./components/ProductCatalog";
-import { StockLevelManagement } from "./components/StockLevelManagement";
-import { SupplierManagement } from "./components/SupplierManagement";
-import { SupplierDetails } from "./components/SupplierDetails";
-import { ReorderProcessing } from "./components/ReorderProcessing";
-import { AddProductModal } from "./components/AddProductModal";
-import { AddSupplierModal } from "./components/AddSupplierModal";
-import { StockAdjustmentModal } from "./components/StockAdjustmentModal";
-import { ReorderModal } from "./components/ReorderModal";
-import { CategoryManagementModal } from "./components/CategoryManagementModal";
 import { RealTimeTrackingPage } from "./components/RealTimeTrackingPage";
 import { RouteOptimizationPage } from "./components/RouteOptimizationPage";
-import { PaymentOperationsPage } from "./components/PaymentOperationsPage";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner@2.0.3";
@@ -445,70 +433,15 @@ export default function App() {
             }}
             onDeactivateDriver={handleDeactivateDriver}
           />
-        ) : currentPage === "inventory" ? (
-          <InventoryLayout currentTab={inventoryTab} onTabChange={setInventoryTab}>
-            {selectedSupplier ? (
-              <SupplierDetails
-                supplier={selectedSupplier}
-                onBack={() => setSelectedSupplier(null)}
-                onEdit={() => toast.info("Edit supplier functionality")}
-              />
-            ) : inventoryTab === "products" ? (
-              <ProductCatalog
-                onAddProduct={() => setAddProductModal(true)}
-                onEditProduct={(product) => toast.info(`Edit product: ${product.name}`)}
-                onDeleteProduct={(product) => {
-                  setConfirmDialog({
-                    open: true,
-                    title: "Delete Product",
-                    description: `Are you sure you want to delete ${product.name}? This action cannot be undone.`,
-                    onConfirm: () => {
-                      toast.success(`Product ${product.name} deleted`);
-                    },
-                  });
-                }}
-                onManageCategories={() => setCategoryModal(true)}
-              />
-            ) : inventoryTab === "stock" ? (
-              <StockLevelManagement
-                onAdjustStock={(item, type) =>
-                  setStockAdjustmentModal({ open: true, item, type })
-                }
-              />
-            ) : inventoryTab === "suppliers" ? (
-              <SupplierManagement
-                onAddSupplier={() => setAddSupplierModal(true)}
-                onViewDetails={(supplier) => setSelectedSupplier(supplier)}
-                onCreateOrder={(supplier) => toast.info(`Create order for ${supplier.name}`)}
-                onDeactivateSupplier={(supplier) => {
-                  setConfirmDialog({
-                    open: true,
-                    title: "Deactivate Supplier",
-                    description: `Are you sure you want to deactivate ${supplier.name}?`,
-                    onConfirm: () => {
-                      toast.success(`Supplier ${supplier.name} deactivated`);
-                    },
-                  });
-                }}
-              />
-            ) : inventoryTab === "reorder" ? (
-              <ReorderProcessing
-                onReorder={(item) => setReorderModal({ open: true, item })}
-              />
-            ) : null}
-          </InventoryLayout>
+        
         ) : currentPage === "returns" ? (
           <ReturnsPage />
-        ) : currentPage === "reports" ? (
-          <ReportsPage />
         ) : currentPage === "settings" ? (
           <SettingsPage />
         ) : currentPage === "tracking" ? (
           <RealTimeTrackingPage />
         ) : currentPage === "routes" ? (
           <RouteOptimizationPage />
-        ) : currentPage === "payments" ? (
-          <PaymentOperationsPage />
         ) : currentPage === "analytics" ? (
           <AnalyticsDashboard />
         ) : null}
@@ -558,52 +491,6 @@ export default function App() {
         description={confirmDialog.description}
         variant="destructive"
       />
-
-      {/* Inventory Modals */}
-      <AddProductModal
-        isOpen={addProductModal}
-        onClose={() => setAddProductModal(false)}
-        onAddProduct={(product) => {
-          toast.success(`Product "${product.name}" added successfully`);
-        }}
-      />
-
-      <AddSupplierModal
-        isOpen={addSupplierModal}
-        onClose={() => setAddSupplierModal(false)}
-        onAddSupplier={(supplier) => {
-          toast.success(`Supplier "${supplier.name}" added successfully`);
-        }}
-      />
-
-      <StockAdjustmentModal
-        isOpen={stockAdjustmentModal.open}
-        onClose={() =>
-          setStockAdjustmentModal({ open: false, item: null, type: "add" })
-        }
-        item={stockAdjustmentModal.item}
-        type={stockAdjustmentModal.type}
-        onAdjust={(itemId, quantity, reason) => {
-          toast.success(
-            `Stock ${quantity > 0 ? "added" : "deducted"} successfully`
-          );
-        }}
-      />
-
-      <ReorderModal
-        isOpen={reorderModal.open}
-        onClose={() => setReorderModal({ open: false, item: null })}
-        item={reorderModal.item}
-        onPlaceOrder={(order) => {
-          toast.success(`Reorder placed for ${order.quantity} units`);
-        }}
-      />
-
-      <CategoryManagementModal
-        isOpen={categoryModal}
-        onClose={() => setCategoryModal(false)}
-      />
-
       <Toaster />
     </>
   );

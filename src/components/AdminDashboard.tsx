@@ -4,19 +4,12 @@ import {
   Truck,
   CheckCircle2,
   RotateCcw,
-  TrendingUp,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
+  ResponsiveContainer,
 } from "recharts";
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
 import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
@@ -29,7 +22,6 @@ interface DashboardStats {
   activeDeliveries: number;
   completedDeliveries: number;
   returns: number;
-  revenueChange: number;
   successRate: number;
 }
 
@@ -38,21 +30,11 @@ interface AdminDashboardProps {
 }
 
 export function AdminDashboard({ stats }: AdminDashboardProps) {
-  // Mock data for charts
-  const revenueData = [
-    { month: "Jan", revenue: 45000 },
-    { month: "Feb", revenue: 52000 },
-    { month: "Mar", revenue: 48000 },
-    { month: "Apr", revenue: 61000 },
-    { month: "May", revenue: 58000 },
-    { month: "Jun", revenue: 67000 },
-  ];
-
   const deliveryStatusData = [
-    { name: "Completed", value: 450, color: "#27AE60" },
-    { name: "In Transit", value: 120, color: "#3498DB" },
-    { name: "Pending", value: 80, color: "#F39C12" },
-    { name: "Returned", value: 25, color: "#E74C3C" },
+    { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
+    { name: "In Transit", value: stats.activeDeliveries, color: "#3498DB" },
+    { name: "Pending", value: stats.pendingOrders, color: "#F39C12" },
+    { name: "Returned", value: stats.returns, color: "#E74C3C" },
   ];
 
   const kpiCards = [
@@ -134,95 +116,51 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         })}
       </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Chart */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Revenue Trend</CardTitle>
-              <div className="flex items-center gap-1 text-[#27AE60]">
-                <TrendingUp className="w-4 h-4" />
-                <span className="text-sm">+{stats.revenueChange}%</span>
-              </div>
+      {/* Delivery Status Chart */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Delivery Status</CardTitle>
+            <div className="flex items-center gap-1 text-[#27AE60]">
+              <span className="text-sm">{stats.successRate}% Success</span>
             </div>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis
-                  dataKey="month"
-                  stroke="#888"
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis stroke="#888" tick={{ fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#fff",
-                    border: "1px solid #e0e0e0",
-                    borderRadius: "8px",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#27AE60"
-                  strokeWidth={2}
-                  dot={{ fill: "#27AE60", r: 4 }}
-                />
-              </LineChart>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center">
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={deliveryStatusData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {deliveryStatusData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+              </PieChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Delivery Success Rate */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Delivery Status</CardTitle>
-              <div className="flex items-center gap-1 text-[#27AE60]">
-                <span className="text-sm">{stats.successRate}% Success</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            {deliveryStatusData.map((item) => (
+              <div key={item.name} className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: item.color }}
+                ></div>
+                <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                  {item.name}: {item.value}
+                </span>
               </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-center">
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={deliveryStatusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {deliveryStatusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              {deliveryStatusData.map((item) => (
-                <div key={item.name} className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: item.color }}
-                  ></div>
-                  <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                    {item.name}: {item.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Leaflet Map */}
       <Card className="border-0 shadow-sm">
