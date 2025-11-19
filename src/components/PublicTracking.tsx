@@ -15,6 +15,11 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Separator } from "./ui/separator";
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
+import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
+import L from 'leaflet'; // Import Leaflet for marker icons
+import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
 
 interface Delivery {
   refNo: string;
@@ -29,7 +34,15 @@ interface Delivery {
     completed: boolean;
   }[];
 }
-
+  const defaultIcon = new L.Icon({
+    iconUrl: markerIcon,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: markerShadow,
+    shadowSize: [41, 41],
+  });
+  
 interface PublicTrackingProps {
   onNavigateToLogin: () => void;
   onTrackDelivery: (refNo: string) => Delivery | null;
@@ -258,18 +271,20 @@ export function PublicTracking({
                 <CardTitle>Delivery Location</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="bg-gray-100 rounded-lg h-64 flex items-center justify-center">
-                  <div className="text-center">
-                    <MapPin className="w-12 h-12 text-[#27AE60] mx-auto mb-2" />
-                    <p className="text-sm text-[#222B2D]/60">Google Maps</p>
-                    <p className="text-xs text-[#222B2D]/40">
-                      Live tracking map
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
+                       <MapContainer center={[14.5995, 120.9842]} zoom={13} style={{ height: "400px", width: "100%" }}>
+                         <TileLayer
+                           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                         />
+                         {/* Example Marker */}
+                         <Marker position={[14.5995, 120.9842]} icon={defaultIcon}>
+                           <Popup>
+                             A live driver is here.
+                           </Popup>
+                         </Marker>
+                       </MapContainer>
+                     </CardContent>
             </Card>
-
             {/* Actions */}
             <div className="flex gap-3">
               <Button

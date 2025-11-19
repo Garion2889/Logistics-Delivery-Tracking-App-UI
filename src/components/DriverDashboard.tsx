@@ -3,6 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { DriverDeliveryDetail } from "./DriverDeliveryDetail";
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
+import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
+import L from 'leaflet'; // Import Leaflet for marker icons
+import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
 import {
   Package,
   CheckCircle2,
@@ -74,7 +79,14 @@ export function DriverDashboard({
     };
     return colors[status];
   };
-
+  const defaultIcon = new L.Icon({
+    iconUrl: markerIcon,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: markerShadow,
+    shadowSize: [41, 41],
+  });
   // Function to open Google Maps with delivery route
   const handleOpenMap = () => {
     toast.info("Opening route map view...");
@@ -184,17 +196,18 @@ export function DriverDashboard({
               {/* Map Preview */}
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-4">
-                  <div className="bg-gray-100 dark:bg-gray-800 rounded-lg h-48 flex items-center justify-center">
-                    <div className="text-center">
-                      <Navigation className="w-12 h-12 text-[#27AE60] mx-auto mb-2" />
-                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                        Route Map
-                      </p>
-                      <p className="text-xs text-[#222B2D]/40 dark:text-white/40">
-                        Google Maps route preview
-                      </p>
-                    </div>
-                  </div>
+                 <MapContainer center={[14.5995, 120.9842]} zoom={13} style={{ height: "400px", width: "100%" }}>
+                             <TileLayer
+                               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                             />
+                             {/* Example Marker */}
+                             <Marker position={[14.5995, 120.9842]} icon={defaultIcon}>
+                               <Popup>
+                                 A live driver is here.
+                               </Popup>
+                             </Marker>
+                           </MapContainer>
                 </CardContent>
               </Card>
 

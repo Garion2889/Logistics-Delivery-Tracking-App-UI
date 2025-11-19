@@ -6,6 +6,11 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
+import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
+import L from 'leaflet'; // Import Leaflet for marker icons
+import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
 import {
   MapPin,
   Navigation,
@@ -63,7 +68,14 @@ interface LocationHistory {
   speed: number;
   event?: string;
 }
-
+  const defaultIcon = new L.Icon({
+    iconUrl: markerIcon,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: markerShadow,
+    shadowSize: [41, 41],
+  });
 const mockDrivers: Driver[] = [
   {
     id: "1",
@@ -437,26 +449,18 @@ export function RealTimeTrackingPage() {
             <CardContent className="p-0">
               {/* Map Placeholder with Google Maps API integration note */}
               <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center space-y-3 p-6">
-                    <MapPin className="w-16 h-16 text-[#27AE60] mx-auto" />
-                    <div>
-                      <h3 className="text-[#222B2D] dark:text-white mb-2">
-                        Google Maps Integration
-                      </h3>
-                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60 max-w-md">
-                        Live GPS tracking map showing driver locations, routes, and
-                        geofence zones. Replace with actual Google Maps API
-                        implementation.
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-center gap-2 text-xs text-[#222B2D]/40 dark:text-white/40">
-                      <code className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">
-                        API Key: YOUR_GOOGLE_MAPS_KEY
-                      </code>
-                    </div>
-                  </div>
-                </div>
+                <MapContainer center={[14.5995, 120.9842]} zoom={13} style={{ height: "400px", width: "100%" }}>
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            {/* Example Marker */}
+            <Marker position={[14.5995, 120.9842]} icon={defaultIcon}>
+              <Popup>
+                A live driver is here.
+              </Popup>
+            </Marker>
+          </MapContainer>
 
                 {/* Map Legend */}
                 <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 space-y-2">
