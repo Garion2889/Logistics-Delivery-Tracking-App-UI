@@ -6,12 +6,13 @@ import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Truck, ArrowRight } from "lucide-react";
 
-interface LoginPageProps {
-  onLogin: (role: "admin" | "driver", email: string) => void;
+interface LoginPageWithAuthProps {
+  onLogin: (role: "admin" | "driver", email: string, password: string) => void;
   onNavigateToTracking: () => void;
+  loading?: boolean;
 }
 
-export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
+export function LoginPageWithAuth({ onLogin, onNavigateToTracking, loading }: LoginPageWithAuthProps) {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [driverEmail, setDriverEmail] = useState("");
@@ -19,14 +20,12 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock authentication - in production, this would use Supabase Auth
-    onLogin("admin", adminEmail);
+    onLogin("admin", adminEmail, adminPassword);
   };
 
   const handleDriverLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock authentication - in production, this would use Supabase Auth
-    onLogin("driver", driverEmail);
+    onLogin("driver", driverEmail, driverPassword);
   };
 
   return (
@@ -69,6 +68,7 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
                       required
+                      disabled={loading}
                       className="bg-white"
                     />
                   </div>
@@ -81,15 +81,20 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
                       value={adminPassword}
                       onChange={(e) => setAdminPassword(e.target.value)}
                       required
+                      disabled={loading}
                       className="bg-white"
                     />
                   </div>
                   <Button
                     type="submit"
                     className="w-full bg-[#27AE60] hover:bg-[#229954] text-white"
+                    disabled={loading}
                   >
-                    Sign In as Admin
+                    {loading ? "Signing in..." : "Sign In as Admin"}
                   </Button>
+                  <p className="text-xs text-center text-[#222B2D]/60 mt-2">
+                    Test: admin@smartstock.ph / admin123
+                  </p>
                 </form>
               </TabsContent>
 
@@ -105,6 +110,7 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
                       value={driverEmail}
                       onChange={(e) => setDriverEmail(e.target.value)}
                       required
+                      disabled={loading}
                       className="bg-white"
                     />
                   </div>
@@ -117,15 +123,20 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
                       value={driverPassword}
                       onChange={(e) => setDriverPassword(e.target.value)}
                       required
+                      disabled={loading}
                       className="bg-white"
                     />
                   </div>
                   <Button
                     type="submit"
                     className="w-full bg-[#27AE60] hover:bg-[#229954] text-white"
+                    disabled={loading}
                   >
-                    Sign In as Driver
+                    {loading ? "Signing in..." : "Sign In as Driver"}
                   </Button>
+                  <p className="text-xs text-center text-[#222B2D]/60 mt-2">
+                    Test: pedro@smartstock.ph / driver123
+                  </p>
                 </form>
               </TabsContent>
             </Tabs>
@@ -137,6 +148,7 @@ export function LoginPage({ onLogin, onNavigateToTracking }: LoginPageProps) {
           <button
             onClick={onNavigateToTracking}
             className="inline-flex items-center gap-2 text-[#27AE60] hover:text-[#229954] transition-colors"
+            disabled={loading}
           >
             Track a Delivery
             <ArrowRight className="w-4 h-4" />

@@ -3,35 +3,106 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
+import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Truck, ArrowRight } from "lucide-react";
+import { projectId } from "../utils/supabase/info";
+import { toast } from "sonner@2.0.3";
 
 interface LoginPageWithAuthProps {
-  onLogin: (role: "admin" | "driver", email: string, password: string) => void;
-  onNavigateToTracking: () => void;
-  loading?: boolean;
+  onLogin: (token: string, role: string, id: string) => void;
+  onShowTracking: () => void;
 }
 
-export function LoginPageWithAuth({ onLogin, onNavigateToTracking, loading }: LoginPageWithAuthProps) {
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
-  const [driverEmail, setDriverEmail] = useState("");
-  const [driverPassword, setDriverPassword] = useState("");
+export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuthProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"admin" | "driver">("admin");
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin("admin", adminEmail, adminPassword);
-  };
+    setLoading(true);
 
-  const handleDriverLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    onLogin("driver", driverEmail, driverPassword);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        toast.error(`Login failed: ${error.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const userResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/login/auth/me`,
+        {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+        }
+      );
+
+      const userData = await userResponse.json();
+
+      if (!userData.user) {
+        toast.error("User profile not found");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // CHECK ROLE VS TAB
+      if (activeTab === "admin" && userData.user.role !== "admin") {
+        toast.error("This account is not an admin account");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      if (activeTab === "driver" && userData.user.role !== "driver") {
+        toast.error("This account is not a driver account");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // DRIVER SPECIFIC FETCH
+      if (userData.user.role === "driver") {
+        const driverResponse = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/login/auth/me`,
+          {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          }
+        );
+
+        const driverData = await driverResponse.json();
+
+        if (!driverData.driver) {
+          toast.error("Driver profile not found");
+          await supabase.auth.signOut();
+          setLoading(false);
+          return;
+        }
+
+        toast.success("Login successful");
+        onLogin(data.session.access_token, "driver", driverData.driver.id);
+      } else {
+        toast.success("Login successful");
+        onLogin(data.session.access_token, "admin", userData.user.id);
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      toast.error("Login failed");
+    }
+
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F6F7F8] p-4">
       <div className="w-full max-w-md space-y-6">
-        {/* Logo and Branding */}
+        {/* Logo */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-xl bg-[#27AE60] flex items-center justify-center">
@@ -49,91 +120,82 @@ export function LoginPageWithAuth({ onLogin, onNavigateToTracking, loading }: Lo
             <CardTitle>Sign In</CardTitle>
             <CardDescription>Choose your role to continue</CardDescription>
           </CardHeader>
+
           <CardContent>
-            <Tabs defaultValue="admin" className="w-full">
+            <Tabs
+              defaultValue="admin"
+              className="w-full"
+              onValueChange={(val) => setActiveTab(val as "admin" | "driver")}
+            >
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="admin">Admin</TabsTrigger>
                 <TabsTrigger value="driver">Driver</TabsTrigger>
               </TabsList>
 
-              {/* Admin Login */}
+              {/* ADMIN */}
               <TabsContent value="admin">
-                <form onSubmit={handleAdminLogin} className="space-y-4">
+                <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="admin-email">Email</Label>
+                    <Label>Email</Label>
                     <Input
-                      id="admin-email"
                       type="email"
                       placeholder="admin@smartstock.ph"
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
-                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       disabled={loading}
-                      className="bg-white"
                     />
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="admin-password">Password</Label>
+                    <Label>Password</Label>
                     <Input
-                      id="admin-password"
                       type="password"
                       placeholder="••••••••"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       disabled={loading}
-                      className="bg-white"
                     />
                   </div>
-                  <Button
-                    type="submit"
-                    className="w-full bg-[#27AE60] hover:bg-[#229954] text-white"
-                    disabled={loading}
-                  >
+
+                  <Button className="w-full bg-[#27AE60] text-white" disabled={loading}>
                     {loading ? "Signing in..." : "Sign In as Admin"}
                   </Button>
+
                   <p className="text-xs text-center text-[#222B2D]/60 mt-2">
                     Test: admin@smartstock.ph / admin123
                   </p>
                 </form>
               </TabsContent>
 
-              {/* Driver Login */}
+              {/* DRIVER */}
               <TabsContent value="driver">
-                <form onSubmit={handleDriverLogin} className="space-y-4">
+                <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="driver-email">Email</Label>
+                    <Label>Email</Label>
                     <Input
-                      id="driver-email"
                       type="email"
                       placeholder="driver@smartstock.ph"
-                      value={driverEmail}
-                      onChange={(e) => setDriverEmail(e.target.value)}
-                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       disabled={loading}
-                      className="bg-white"
                     />
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="driver-password">Password</Label>
+                    <Label>Password</Label>
                     <Input
-                      id="driver-password"
                       type="password"
                       placeholder="••••••••"
-                      value={driverPassword}
-                      onChange={(e) => setDriverPassword(e.target.value)}
-                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       disabled={loading}
-                      className="bg-white"
                     />
                   </div>
-                  <Button
-                    type="submit"
-                    className="w-full bg-[#27AE60] hover:bg-[#229954] text-white"
-                    disabled={loading}
-                  >
+
+                  <Button className="w-full bg-[#27AE60] text-white" disabled={loading}>
                     {loading ? "Signing in..." : "Sign In as Driver"}
                   </Button>
+
                   <p className="text-xs text-center text-[#222B2D]/60 mt-2">
                     Test: pedro@smartstock.ph / driver123
                   </p>
@@ -143,11 +205,11 @@ export function LoginPageWithAuth({ onLogin, onNavigateToTracking, loading }: Lo
           </CardContent>
         </Card>
 
-        {/* Public Tracking Link */}
+        {/* Public Tracking */}
         <div className="text-center">
           <button
-            onClick={onNavigateToTracking}
-            className="inline-flex items-center gap-2 text-[#27AE60] hover:text-[#229954] transition-colors"
+            onClick={onShowTracking}
+            className="inline-flex items-center gap-2 text-[#27AE60] hover:text-[#229954]"
             disabled={loading}
           >
             Track a Delivery
