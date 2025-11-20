@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LoginPageWithAuth } from "./components/LoginPageWithAuth";
 import { AdminLayout } from "./components/AdminLayout";
 import { AdminDashboard } from "./components/AdminDashboard";
@@ -54,6 +54,72 @@ export default function App() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
+  // ---------- Load session from localStorage ----------
+  useEffect(() => {
+    const storedRole = localStorage.getItem("userRole") as "admin" | "driver" | null;
+    const storedId = localStorage.getItem("userId");
+    const storedPage = localStorage.getItem("currentPage");
+    const storedDarkMode = localStorage.getItem("isDarkMode");
+
+    if (storedRole && storedId) {
+      setUserRole(storedRole);
+      setUserId(storedId);
+      setCurrentView(storedRole);
+    }
+
+    if (storedPage) setCurrentPage(storedPage);
+    if (storedDarkMode) setIsDarkMode(storedDarkMode === "true");
+  }, []);
+
+  // ---------- Handlers ----------
+
+  const handleLogin = (token: string, role: "admin" | "driver", id: string) => {
+    setUserId(id);
+    setUserRole(role);
+    setCurrentView(role);
+
+    // Persist session
+    localStorage.setItem("userId", id);
+    localStorage.setItem("userRole", role);
+
+    toast.success(`Welcome back! Logged in as ${role}`);
+  };
+
+  const handleLogout = () => {
+    setCurrentView("login");
+    setCurrentPage("dashboard");
+    setSelectedDelivery(null);
+    setUserId("");
+    setUserRole(null);
+    setIsDarkMode(false);
+
+    // Clear session
+    localStorage.removeItem("userId");
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("currentPage");
+    localStorage.removeItem("isDarkMode");
+
+    toast.info("Logged out successfully");
+  };
+
+  const handleUpdateDeliveryStatus = (deliveryId: string, status: Delivery["status"]) => {
+    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status } : d));
+    toast.success("Delivery status updated");
+  };
+
+  const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
+
+  const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
+
+  // Persist current page and dark mode whenever they change
+  useEffect(() => {
+    localStorage.setItem("currentPage", currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    localStorage.setItem("isDarkMode", isDarkMode.toString());
+  }, [isDarkMode]);
+
   // ---------- Stats ----------
 
   const dashboardStats = {
@@ -70,33 +136,6 @@ export default function App() {
     completed: deliveries.filter(d => d.driver === userId && d.status === "delivered").length,
     returned: deliveries.filter(d => d.driver === userId && d.status === "returned").length,
   };
-
-  // ---------- Handlers ----------
-
-  const handleLogin = (token: string, role: "admin" | "driver", id: string) => {
-    setUserId(id);
-    setUserRole(role);
-    setCurrentView(role);
-    toast.success(`Welcome back! Logged in as ${role}`);
-  };
-
-  const handleLogout = () => {
-    setCurrentView("login");
-    setCurrentPage("dashboard");
-    setSelectedDelivery(null);
-    setUserId("");
-    setUserRole(null);
-    toast.info("Logged out successfully");
-  };
-
-  const handleUpdateDeliveryStatus = (deliveryId: string, status: Delivery["status"]) => {
-    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status } : d));
-    toast.success("Delivery status updated");
-  };
-
-  const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
-
-  const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
 
   // ---------- Render ----------
 
@@ -134,7 +173,7 @@ export default function App() {
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
           onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-          userEmail={userId} // could store email instead of ID if needed
+          userEmail={userId}
         >
           {selectedDelivery ? (
             <DeliveryDetail delivery={selectedDelivery} onClose={() => setSelectedDelivery(null)} />
