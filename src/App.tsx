@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LoginPageWithAuth } from "./components/LoginPage";
+import { LoginPageWithAuth } from "./components/LoginPageWithAuth";
 import { AdminLayout } from "./components/AdminLayout";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { DeliveryManagement } from "./components/DeliveryManagement";
