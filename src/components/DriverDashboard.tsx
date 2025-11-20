@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -8,22 +8,9 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-import { useDriverTracking } from "../driver";
-import {
-  Package,
-  MapPin,
-  Truck,
-  User,
-  LogOut,
-  Moon,
-  Sun,
-  Navigation,
-} from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+import { useGPSUploader } from "../drivermaptracker/gpsTracker";
+import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { toast } from "sonner";
 
 interface Delivery {
@@ -43,7 +30,7 @@ interface DriverDashboardProps {
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
-  driverName: string;
+  driverName: string; // could be driverId
   stats: {
     total: number;
     completed: number;
@@ -61,12 +48,15 @@ export function DriverDashboard({
   driverName,
   stats,
 }: DriverDashboardProps) {
-  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(
-    null
-  );
-  const [driverLocation, setDriverLocation] = useState<[number, number] | null>(
-    null
-  );
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
+  const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  // -------------------------------
+  // Correct Hook Usage
+  // -------------------------------
+  // Must be called at the top level of the component
+  useGPSUploader(driverName, setDriverLocation);
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
 
@@ -90,12 +80,14 @@ export function DriverDashboard({
     return colors[status];
   };
 
-  const handleOpenMap = () => {
-    toast.info("Opening route map view...");
-  };
+  const handleOpenMap = () => toast.info("Opening route map view...");
 
-  // Track driver's location
-  useDriverTracking((coords) => setDriverLocation(coords));
+  // Optional: auto-pan map when driverLocation changes
+  useEffect(() => {
+    if (driverLocation && mapRef.current) {
+      mapRef.current.setView(driverLocation, mapRef.current.getZoom());
+    }
+  }, [driverLocation]);
 
   return (
     <div className={isDarkMode ? "dark" : ""}>
@@ -109,9 +101,7 @@ export function DriverDashboard({
               </div>
               <div>
                 <h2 className="text-[#222B2D] dark:text-white">SmartStock</h2>
-                <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                  Driver Portal
-                </p>
+                <p className="text-xs text-[#222B2D]/60 dark:text-white/60">Driver Portal</p>
               </div>
             </div>
 
@@ -189,6 +179,7 @@ export function DriverDashboard({
                     center={driverLocation || [14.5995, 120.9842]}
                     zoom={13}
                     style={{ height: "400px", width: "100%" }}
+                    whenCreated={(map) => (mapRef.current = map)}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -228,7 +219,10 @@ export function DriverDashboard({
                             <p className="text-[#222B2D] dark:text-white">{delivery.refNo}</p>
                             <p className="text-sm text-gray-500">{delivery.customer}</p>
                           </div>
-                          <Badge className={getStatusColor(delivery.status)} variant="outline">
+                          <Badge
+                            className={getStatusColor(delivery.status)}
+                            variant="outline"
+                          >
                             {delivery.status.charAt(0).toUpperCase() + delivery.status.slice(1)}
                           </Badge>
                         </div>

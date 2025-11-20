@@ -1,21 +1,13 @@
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import {
-  Package,
-  Truck,
-  CheckCircle2,
-  RotateCcw,
-} from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-} from "recharts";
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
-import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
-import L from 'leaflet'; // Import Leaflet for marker icons
-import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
+import { Package, Truck, CheckCircle2, RotateCcw } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import { supabase } from "../utils/supabase/client";
 
 interface DashboardStats {
   pendingOrders: number;
@@ -29,7 +21,44 @@ interface AdminDashboardProps {
   stats: DashboardStats;
 }
 
+interface LiveDriverLocation {
+  driver_id: string;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+}
+
 export function AdminDashboard({ stats }: AdminDashboardProps) {
+  const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
+
+  // Subscribe to real-time driver GPS updates
+  useEffect(() => {
+    const channel = supabase
+      .channel("live-driver-locations")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "driver_locations" },
+        (payload) => {
+          const updated = payload.new as LiveDriverLocation;
+
+          setDriverLocations((prev) => {
+            const exists = prev.find((d) => d.driver_id === updated.driver_id);
+            if (exists) {
+              return prev.map((d) =>
+                d.driver_id === updated.driver_id ? updated : d
+              );
+            }
+            return [...prev, updated];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const deliveryStatusData = [
     { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
     { name: "In Transit", value: stats.activeDeliveries, color: "#3498DB" },
@@ -68,7 +97,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     },
   ];
 
-  // Set default icon for Leaflet markers
+  // Default Leaflet marker icon
   const defaultIcon = new L.Icon({
     iconUrl: markerIcon,
     iconSize: [25, 41],
@@ -168,17 +197,27 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
           <CardTitle>Live Driver Tracking</CardTitle>
         </CardHeader>
         <CardContent>
-          <MapContainer center={[14.5995, 120.9842]} zoom={13} style={{ height: "400px", width: "100%" }}>
+          <MapContainer
+            center={[14.5995, 120.9842]}
+            zoom={13}
+            style={{ height: "400px", width: "100%" }}
+          >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              attribution='&copy; OpenStreetMap contributors'
             />
-            {/* Example Marker */}
-            <Marker position={[14.5995, 120.9842]} icon={defaultIcon}>
-              <Popup>
-                A live driver is here.
-              </Popup>
-            </Marker>
+            {driverLocations.map((driver) => (
+              <Marker
+                key={driver.driver_id}
+                position={[driver.latitude, driver.longitude]}
+                icon={defaultIcon}
+              >
+                <Popup>
+                  <b>Driver:</b> {driver.driver_id} <br />
+                  <b>Last update:</b> {new Date(driver.recorded_at).toLocaleTimeString()}
+                </Popup>
+              </Marker>
+            ))}
           </MapContainer>
         </CardContent>
       </Card>

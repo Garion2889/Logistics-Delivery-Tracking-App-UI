@@ -88,6 +88,8 @@ export default function AppWithSupabase() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(false);
 
+
+  
   // Fetch deliveries from Supabase
   const fetchDeliveries = async () => {
     try {
