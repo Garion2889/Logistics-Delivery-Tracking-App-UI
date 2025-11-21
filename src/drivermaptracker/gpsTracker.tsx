@@ -12,6 +12,7 @@ interface GPSCoords {
 
 export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
   useEffect(() => {
+    if (!driverId || driverId === "Driver") return;
 
     let watchId: number | null = null;
 
