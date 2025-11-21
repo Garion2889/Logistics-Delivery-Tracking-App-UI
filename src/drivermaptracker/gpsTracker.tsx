@@ -23,7 +23,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
         console.warn("Geolocation not supported. Using fallback coords if available.");
         if (fallbackCoords) {
           await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
+            driver_uuid: driverId,
             lat: fallbackCoords.latitude,
             lng: fallbackCoords.longitude,
             accuracy: fallbackCoords.accuracy,
@@ -39,7 +39,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
         console.warn("Geolocation requires HTTPS. Using fallback coords if available.");
         if (fallbackCoords) {
           await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
+            driver_uuid: driverId,
             lat: fallbackCoords.latitude,
             lng: fallbackCoords.longitude,
             accuracy: fallbackCoords.accuracy,
@@ -58,7 +58,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
           if (!latitude || !longitude) return;
 
           await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
+            driver_uuid: driverId,
             lat: latitude,
             lng: longitude,
             accuracy: accuracy,
