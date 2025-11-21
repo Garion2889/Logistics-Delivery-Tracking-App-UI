@@ -30,7 +30,7 @@ interface DriverDashboardProps {
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
-  driverName: string; // could be driverId
+  name: string;
   stats: {
     total: number;
     completed: number;
@@ -45,18 +45,16 @@ export function DriverDashboard({
   onLogout,
   isDarkMode,
   onToggleDarkMode,
-  driverName,
+  name,
   stats,
 }: DriverDashboardProps) {
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
+
   const mapRef = useRef<L.Map | null>(null);
 
-  // -------------------------------
-  // Correct Hook Usage
-  // -------------------------------
-  // Must be called at the top level of the component
-  useGPSUploader(driverName, setDriverLocation);
+  // Start GPS upload for this driver
+  useGPSUploader(name);
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
 
@@ -69,6 +67,13 @@ export function DriverDashboard({
     shadowSize: [41, 41],
   });
 
+  // Auto-pan map when live GPS updates occur
+  useEffect(() => {
+    if (driverLocation && mapRef.current) {
+      mapRef.current.setView(driverLocation, mapRef.current.getZoom());
+    }
+  }, [driverLocation]);
+
   const getStatusColor = (status: Delivery["status"]) => {
     const colors = {
       pending: "bg-orange-100 text-orange-700",
@@ -80,19 +85,10 @@ export function DriverDashboard({
     return colors[status];
   };
 
-  const handleOpenMap = () => toast.info("Opening route map view...");
-
-  // Optional: auto-pan map when driverLocation changes
-  useEffect(() => {
-    if (driverLocation && mapRef.current) {
-      mapRef.current.setView(driverLocation, mapRef.current.getZoom());
-    }
-  }, [driverLocation]);
-
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
-        {/* Header */}
+        {/* ---------------- HEADER ---------------- */}
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
           <div className="p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -106,12 +102,7 @@ export function DriverDashboard({
             </div>
 
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggleDarkMode}
-                title="Toggle Dark Mode"
-              >
+              <Button variant="ghost" size="icon" onClick={onToggleDarkMode}>
                 {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </Button>
 
@@ -119,7 +110,6 @@ export function DriverDashboard({
                 variant="ghost"
                 size="icon"
                 onClick={onLogout}
-                title="Logout"
                 className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
               >
                 <LogOut className="w-5 h-5" />
@@ -133,7 +123,7 @@ export function DriverDashboard({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <div className="px-2 py-1.5">
-                    <p className="text-sm">{driverName}</p>
+                    <p className="text-sm">{name}</p>
                     <p className="text-xs text-gray-500">Driver</p>
                   </div>
                 </DropdownMenuContent>
@@ -141,7 +131,7 @@ export function DriverDashboard({
             </div>
           </div>
 
-          {/* KPI Summary */}
+          {/* Summary Stats */}
           <div className="grid grid-cols-3 gap-2 p-4">
             <div className="bg-[#F6F7F8] dark:bg-[#222B2D] rounded-lg p-3 text-center">
               <p className="text-2xl">{stats.total}</p>
@@ -158,21 +148,21 @@ export function DriverDashboard({
           </div>
         </header>
 
-        {/* Main Content */}
+        {/* ---------------- MAIN ---------------- */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
               delivery={selectedDelivery}
               onBack={() => setSelectedDeliveryId(null)}
-              onUpdateStatus={(status) => {
-                onUpdateStatus(selectedDelivery.id, status);
+              onUpdateStatus={(s) => {
+                onUpdateStatus(selectedDelivery.id, s);
                 setSelectedDeliveryId(null);
               }}
               onUploadPOD={() => onUploadPOD(selectedDelivery.id)}
             />
           ) : (
             <>
-              {/* Map */}
+              {/* MAP VIEW */}
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-4">
                   <MapContainer
@@ -183,77 +173,73 @@ export function DriverDashboard({
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; OpenStreetMap contributors'
+                      attribution="© OpenStreetMap contributors"
                     />
+
                     {driverLocation && (
                       <Marker position={driverLocation} icon={defaultIcon}>
-                        <Popup>Driver's current location</Popup>
+                        <Popup>Your current location</Popup>
                       </Marker>
                     )}
                   </MapContainer>
                 </CardContent>
               </Card>
 
-              {/* Deliveries List */}
-              <div>
-                <h3 className="text-[#222B2D] dark:text-white mb-3">Assigned Deliveries</h3>
-                <div className="space-y-3">
-                  {deliveries.length === 0 && (
-                    <Card className="border-0 shadow-sm">
-                      <CardContent className="p-8 text-center">
-                        <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                        <p className="text-gray-500">No deliveries assigned yet</p>
-                      </CardContent>
-                    </Card>
-                  )}
+              {/* DELIVERY LIST */}
+              <h3 className="text-[#222B2D] dark:text-white mb-3">Assigned Deliveries</h3>
 
-                  {deliveries.map((delivery) => (
-                    <Card
-                      key={delivery.id}
-                      className="border-0 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => setSelectedDeliveryId(delivery.id)}
-                    >
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-[#222B2D] dark:text-white">{delivery.refNo}</p>
-                            <p className="text-sm text-gray-500">{delivery.customer}</p>
-                          </div>
-                          <Badge
-                            className={getStatusColor(delivery.status)}
-                            variant="outline"
-                          >
-                            {delivery.status.charAt(0).toUpperCase() + delivery.status.slice(1)}
-                          </Badge>
+              {deliveries.length === 0 ? (
+                <Card className="border-0 shadow-sm">
+                  <CardContent className="p-8 text-center">
+                    <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-500">No deliveries assigned yet</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                deliveries.map((delivery) => (
+                  <Card
+                    key={delivery.id}
+                    className="border-0 shadow-sm hover:shadow-md transition cursor-pointer"
+                    onClick={() => setSelectedDeliveryId(delivery.id)}
+                  >
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-[#222B2D] dark:text-white">{delivery.refNo}</p>
+                          <p className="text-sm text-gray-500">{delivery.customer}</p>
                         </div>
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                          <p className="text-sm text-gray-500">{delivery.address}</p>
+                        <Badge className={getStatusColor(delivery.status)} variant="outline">
+                          {delivery.status.charAt(0).toUpperCase() + delivery.status.slice(1)}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400 mt-1" />
+                        <p className="text-sm text-gray-500">{delivery.address}</p>
+                      </div>
+
+                      {delivery.paymentType === "COD" && delivery.amount && (
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                            COD: ₱{delivery.amount.toLocaleString()}
+                          </p>
                         </div>
-                        {delivery.paymentType === "COD" && delivery.amount && (
-                          <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
-                            <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                              Collect on Delivery: ₱{delivery.amount.toLocaleString()}
-                            </p>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </>
           )}
         </main>
 
-        {/* Floating Button */}
+        {/* ROUTE BUTTON */}
         {!selectedDelivery && deliveries.length > 0 && (
           <div className="fixed bottom-6 right-6">
             <Button
               size="icon"
               className="w-14 h-14 rounded-full bg-[#27AE60] hover:bg-[#229954] text-white shadow-lg"
-              onClick={handleOpenMap}
-              title="View Routes"
+              onClick={() => toast.info("Route map coming soon...")}
             >
               <Navigation className="w-6 h-6" />
             </Button>
