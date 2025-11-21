@@ -60,13 +60,13 @@ export function useGPSUploader(fallbackCoords?: GPSCoords) {
       if (!latitude || !longitude) return;
 
       const { error } = await supabase.rpc("update_driver_location", {
-        driver_id: driverId,
-        lat: latitude,
-        lng: longitude,
-        accuracy: accuracy ?? null,
-        speed: speed ?? null,
-        heading: heading ?? null,
-        altitude: altitude ?? null,
+        p_driver_id: driverId,
+        p_lat: latitude,
+        p_lng: longitude,
+        p_accuracy: accuracy ?? null,
+        p_speed: speed ?? null,
+        p_heading: heading ?? null,
+        p_altitude: altitude ?? null,
       });
 
       if (error) console.error("RPC error updating GPS:", error);
