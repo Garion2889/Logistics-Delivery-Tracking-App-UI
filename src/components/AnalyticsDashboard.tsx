@@ -1,43 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+import { supabase } from "../utils/supabase/client"; 
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Skeleton } from "./ui/skeleton";
+import { Calendar } from "./ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { format, subDays } from "date-fns";
+import { DateRange } from "react-day-picker";
 import {
   TrendingUp,
-  TrendingDown,
   Package,
-  DollarSign,
   Truck,
   CheckCircle2,
-  Clock,
   Users,
-  MapPin,
-  FileText,
   Download,
   Calendar as CalendarIcon,
-  Filter,
-  BarChart3,
-  PieChart as PieChartIcon,
-  Activity,
+  Loader2, // Spinner icon
+  AlertCircle,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 import {
   LineChart,
   Line,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
-  Cell,
   AreaChart,
   Area,
   XAxis,
@@ -52,624 +41,401 @@ import {
   PolarRadiusAxis,
   Radar,
 } from "recharts";
-import { Calendar } from "./ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { cn } from "./ui/utils";
-
-// Mock data
-const deliveriesOverTime = [
-  { date: "Nov 6", total: 45, completed: 38, cancelled: 3, pending: 4 },
-  { date: "Nov 7", total: 52, completed: 47, cancelled: 2, pending: 3 },
-  { date: "Nov 8", total: 48, completed: 42, cancelled: 4, pending: 2 },
-  { date: "Nov 9", total: 61, completed: 56, cancelled: 2, pending: 3 },
-  { date: "Nov 10", total: 58, completed: 53, cancelled: 3, pending: 2 },
-  { date: "Nov 11", total: 67, completed: 62, cancelled: 2, pending: 3 },
-  { date: "Nov 12", total: 72, completed: 65, cancelled: 4, pending: 3 },
-];
-
-const paymentBreakdown = [
-  { name: "GCash", value: 45, color: "#27AE60" },
-  { name: "Credit Card", value: 30, color: "#3498DB" },
-  { name: "COD", value: 25, color: "#F39C12" },
-];
-
-const areaCoverage = [
-  { area: "Makati", deliveries: 125, revenue: 145000 },
-  { area: "BGC", deliveries: 98, revenue: 132000 },
-  { area: "Quezon City", deliveries: 156, revenue: 178000 },
-  { area: "Mandaluyong", deliveries: 87, revenue: 98000 },
-  { area: "Pasig", deliveries: 112, revenue: 124000 },
-  { area: "Taguig", deliveries: 92, revenue: 105000 },
-];
-
-const driverPerformance = [
-  { driver: "Pedro Reyes", deliveries: 145, onTime: 92, rating: 4.8 },
-  { driver: "Carlos Mendoza", deliveries: 132, onTime: 88, rating: 4.6 },
-  { driver: "Luis Ramos", deliveries: 118, onTime: 95, rating: 4.9 },
-  { driver: "Miguel Santos", deliveries: 156, onTime: 90, rating: 4.7 },
-];
-
-const hourlyActivity = [
-  { hour: "6 AM", orders: 12 },
-  { hour: "8 AM", orders: 28 },
-  { hour: "10 AM", orders: 45 },
-  { hour: "12 PM", orders: 62 },
-  { hour: "2 PM", orders: 58 },
-  { hour: "4 PM", orders: 42 },
-  { hour: "6 PM", orders: 35 },
-  { hour: "8 PM", orders: 18 },
-];
-
-const performanceMetrics = [
-  { metric: "Speed", value: 85 },
-  { metric: "Accuracy", value: 92 },
-  { metric: "Customer Satisfaction", value: 88 },
-  { metric: "On-Time Delivery", value: 90 },
-  { metric: "Communication", value: 86 },
-];
 
 export function AnalyticsDashboard() {
-  const [dateRange, setDateRange] = useState("week");
-  const [selectedDriver, setSelectedDriver] = useState("all");
-  const [selectedRegion, setSelectedRegion] = useState("all");
-  const [isLoading, setIsLoading] = useState(false);
-  const [date, setDate] = useState<Date | undefined>(new Date());
+  // --- STATE MANAGEMENT ---
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: subDays(new Date(), 30), // Default to last 30 days
+    to: new Date(),
+  });
 
-  // Calculate KPIs
-  const totalDeliveries = deliveriesOverTime.reduce(
-    (sum, day) => sum + day.total,
-    0
-  );
-  const completedDeliveries = deliveriesOverTime.reduce(
-    (sum, day) => sum + day.completed,
-    0
-  );
-  const onTimeRate = 91.5;
-  const totalRevenue = areaCoverage.reduce((sum, area) => sum + area.revenue, 0);
-  const driverEfficiency = 88.3;
+  // Loading States
+  const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false); // Track export button state
 
-  const handleExportReport = (format: "pdf" | "csv") => {
-    // Mock export functionality
-    console.log(`Exporting report in ${format} format...`);
+  // Data States
+  const [kpiStats, setKpiStats] = useState({
+    total_deliveries: 0,
+    revenue: 0,
+    active_deliveries: 0,
+    success_rate: 0,
+    avg_fee: 0,
+  });
+  const [dailyStats, setDailyStats] = useState<any[]>([]);
+  const [driverStats, setDriverStats] = useState<any[]>([]);
+  const [areaCoverage, setAreaCoverage] = useState<any[]>([]);
+
+  // --- DATA FETCHING ---
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!dateRange?.from || !dateRange?.to) return;
+      
+      setIsLoading(true);
+      const startDate = dateRange.from.toISOString();
+      const endDate = dateRange.to.toISOString();
+
+      try {
+        console.log("Fetching dashboard data...", { startDate, endDate });
+
+        // 1. KPI Summary (RPC)
+        const { data: kpiData, error: kpiError } = await supabase.rpc('get_kpi_summary', { 
+          start_date: startDate, 
+          end_date: endDate 
+        });
+        if (kpiError) console.error("KPI Error:", kpiError);
+        if (kpiData && kpiData.length > 0) setKpiStats(kpiData[0]);
+
+        // 2. Daily Trends (View)
+        const { data: trendData, error: trendError } = await supabase
+          .from('analytics_daily_stats')
+          .select('*')
+          .gte('report_date', startDate)
+          .lte('report_date', endDate)
+          .order('report_date', { ascending: true });
+        
+        if (trendError) console.error("Trend Error:", trendError);
+        
+        // Format dates for Recharts
+        setDailyStats(trendData?.map(d => ({
+            ...d,
+            formatted_date: format(new Date(d.report_date), 'MMM dd')
+        })) || []);
+
+        // 3. Driver Performance (View)
+        const { data: driverData, error: driverError } = await supabase
+          .from('analytics_driver_performance')
+          .select('*')
+          .order('completed_deliveries', { ascending: false });
+        
+        if (driverError) console.error("Driver Error:", driverError);
+        setDriverStats(driverData || []);
+
+        // 4. Area Coverage (Mock for demo purposes)
+        setAreaCoverage([
+          { area: "Quezon City", deliveries: 156, revenue: 178000 },
+          { area: "Makati", deliveries: 125, revenue: 145000 },
+          { area: "Taguig", deliveries: 98, revenue: 132000 },
+          { area: "Pasig", deliveries: 85, revenue: 95000 },
+          { area: "Manila", deliveries: 110, revenue: 120000 },
+        ]);
+
+      } catch (error) {
+        console.error("Unexpected error fetching analytics:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [dateRange]);
+
+  // --- EXPORT FUNCTION (DEBUGGED) ---
+  const handleExportReport = async (formatType: "csv") => {
+    console.log("--> 1. Export Button Clicked");
+
+    // Validation
+    if (!dateRange?.from || !dateRange?.to) {
+        alert("Please select a valid date range first.");
+        return;
+    }
+
+    try {
+        setIsExporting(true);
+        const payload = { 
+            startDate: dateRange.from.toISOString(), 
+            endDate: dateRange.to.toISOString() 
+        };
+
+        console.log("--> 2. Invoking Edge Function 'export-delivery-report' with:", payload);
+
+        const { data, error } = await supabase.functions.invoke('export-delivery-report', {
+            body: payload
+        });
+
+        // Error Handling
+        if (error) {
+            console.error("--> X. Function Error:", error);
+            alert(`Export Failed: ${error.message || "Check console for details"}`);
+            return;
+        }
+
+        if (!data) {
+            console.error("--> X. No Data Returned");
+            alert("Export succeeded but the file was empty.");
+            return;
+        }
+
+        console.log("--> 3. Data received. Size:", data.size || data.length);
+        console.log("--> 4. Triggering Browser Download...");
+
+        // Trigger Download
+        const blob = new Blob([data], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `LogiTrack_Report_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        console.log("--> 5. Download Complete");
+
+    } catch (err) {
+        console.error("--> X. Unexpected Catch Error:", err);
+        alert("An unexpected client-side error occurred.");
+    } finally {
+        setIsExporting(false);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
+    <div className="space-y-6 p-6">
+      {/* --- HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-[#222B2D] dark:text-white mb-2">
+          <h1 className="text-[#222B2D] dark:text-white mb-2 text-3xl font-bold">
             Analytics & Reporting
           </h1>
           <p className="text-[#222B2D]/60 dark:text-white/60">
-            Comprehensive insights into logistics performance and business metrics
+            Real-time insights powered by Supabase
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => handleExportReport("csv")} className="gap-2">
-            <Download className="w-4 h-4" />
-            Export CSV
-          </Button>
-          <Button onClick={() => handleExportReport("pdf")} className="gap-2">
-            <Download className="w-4 h-4" />
-            Export PDF
+          {/* Date Picker */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                id="date"
+                variant={"outline"}
+                className="w-[260px] justify-start text-left font-normal"
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "MMM dd, y")} -{" "}
+                      {format(dateRange.to, "MMM dd, y")}
+                    </>
+                  ) : (
+                    format(dateRange.from, "MMM dd, y")
+                  )
+                ) : (
+                  <span>Pick a date range</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                initialFocus
+                mode="range"
+                defaultMonth={dateRange?.from}
+                selected={dateRange}
+                onSelect={setDateRange}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* Export Button */}
+          <Button 
+            variant="outline" 
+            onClick={() => handleExportReport("csv")} 
+            disabled={isExporting || isLoading}
+            className="gap-2 min-w-[140px]"
+          >
+            {isExporting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+                <Download className="w-4 h-4" />
+            )}
+            {isExporting ? "Exporting..." : "Export CSV"}
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <Label className="mb-2 block text-xs">Date Range</Label>
-              <Select value={dateRange} onValueChange={setDateRange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="quarter">This Quarter</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                  <SelectItem value="custom">Custom Range</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex-1">
-              <Label className="mb-2 block text-xs">Driver</Label>
-              <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Drivers</SelectItem>
-                  <SelectItem value="pedro">Pedro Reyes</SelectItem>
-                  <SelectItem value="carlos">Carlos Mendoza</SelectItem>
-                  <SelectItem value="luis">Luis Ramos</SelectItem>
-                  <SelectItem value="miguel">Miguel Santos</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex-1">
-              <Label className="mb-2 block text-xs">Region</Label>
-              <Select value={selectedRegion} onValueChange={setSelectedRegion}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Regions</SelectItem>
-                  <SelectItem value="makati">Makati</SelectItem>
-                  <SelectItem value="bgc">BGC</SelectItem>
-                  <SelectItem value="qc">Quezon City</SelectItem>
-                  <SelectItem value="mandaluyong">Mandaluyong</SelectItem>
-                  <SelectItem value="pasig">Pasig</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-end">
-              <Button className="gap-2">
-                <Filter className="w-4 h-4" />
-                Apply Filters
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Overview KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Total Deliveries
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {totalDeliveries}
-                </h3>
-                <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  +12.5%
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
-                <Package className="w-5 h-5 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  On-Time Rate
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {onTimeRate}%
-                </h3>
-                <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  +2.3%
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
-                <CheckCircle2 className="w-5 h-5 text-[#27AE60]" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Driver Efficiency
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {driverEfficiency}%
-                </h3>
-                <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  +1.8%
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
-                <Truck className="w-5 h-5 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Active Drivers
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {driverPerformance.length}
-                </h3>
-                <p className="text-xs text-[#222B2D]/60 dark:text-white/60 mt-1">
-                  All online
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center">
-                <Users className="w-5 h-5 text-orange-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* --- KPI CARDS --- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard 
+            title="Total Revenue" 
+            value={`₱${kpiStats.revenue.toLocaleString()}`} 
+            icon={<TrendingUp className="w-5 h-5 text-[#27AE60]" />}
+            colorBg="bg-green-50 dark:bg-green-900/20"
+            loading={isLoading}
+        />
+        <KpiCard 
+            title="Active Deliveries" 
+            value={kpiStats.active_deliveries} 
+            icon={<Truck className="w-5 h-5 text-orange-600" />}
+            colorBg="bg-orange-50 dark:bg-orange-900/20"
+            loading={isLoading}
+        />
+        <KpiCard 
+            title="Success Rate" 
+            value={`${kpiStats.success_rate}%`} 
+            icon={<CheckCircle2 className="w-5 h-5 text-purple-600" />}
+            colorBg="bg-purple-50 dark:bg-purple-900/20"
+            loading={isLoading}
+        />
+        <KpiCard 
+            title="Avg. Delivery Fee" 
+            value={`₱${kpiStats.avg_fee}`} 
+            icon={<Package className="w-5 h-5 text-blue-600" />}
+            colorBg="bg-blue-50 dark:bg-blue-900/20"
+            loading={isLoading}
+        />
       </div>
 
-      {/* Data Provider Notice */}
-      <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-              <Activity className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="flex-1">
-              <h4 className="text-[#222B2D] dark:text-white mb-1">
-                Real-time Data Integration
-              </h4>
-              <p className="text-sm text-[#222B2D]/60 dark:text-white/60 mb-2">
-                Analytics powered by Supabase Realtime and PostgreSQL views. Data
-                updates automatically as new deliveries are processed.
-              </p>
-              <code className="text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded">
-                Supabase API • Business Intelligence Dashboard
-              </code>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Main Analytics Content */}
+      {/* --- TABS & CHARTS --- */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
           <TabsTrigger value="drivers">Drivers</TabsTrigger>
           <TabsTrigger value="regions">Regions</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
+        {/* 1. OVERVIEW TAB */}
         <TabsContent value="overview">
-          <div className="space-y-6">
-            {/* Deliveries Over Time */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Deliveries Over Time</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  {isLoading ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-full w-full" />
-                    </div>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={deliveriesOverTime}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="date" />
-                        <YAxis />
-                        <Tooltip />
-                        <Legend />
-                        <Area
-                          type="monotone"
-                          dataKey="completed"
-                          stackId="1"
-                          stroke="#27AE60"
-                          fill="#27AE60"
-                          fillOpacity={0.6}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="pending"
-                          stackId="1"
-                          stroke="#F39C12"
-                          fill="#F39C12"
-                          fillOpacity={0.6}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="cancelled"
-                          stackId="1"
-                          stroke="#E74C3C"
-                          fill="#E74C3C"
-                          fillOpacity={0.6}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Hourly Activity */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Hourly Activity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={hourlyActivity}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="hour" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="orders" fill="#3498DB" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Deliveries Tab */}
-        <TabsContent value="deliveries">
           <Card>
             <CardHeader>
-              <CardTitle>Delivery Performance Analysis</CardTitle>
+              <CardTitle>Daily Delivery Volume</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-96">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={deliveriesOverTime}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      stroke="#3498DB"
-                      strokeWidth={2}
-                      name="Total Deliveries"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="completed"
-                      stroke="#27AE60"
-                      strokeWidth={2}
-                      name="Completed"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="cancelled"
-                      stroke="#E74C3C"
-                      strokeWidth={2}
-                      name="Cancelled"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="h-[400px]">
+                {isLoading ? (
+                  <Skeleton className="h-full w-full" />
+                ) : dailyStats.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={dailyStats}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="formatted_date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Area type="monotone" dataKey="total_delivered" name="Completed" stackId="1" stroke="#27AE60" fill="#27AE60" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="total_pending" name="Pending" stackId="1" stroke="#F39C12" fill="#F39C12" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="total_cancelled" name="Cancelled" stackId="1" stroke="#E74C3C" fill="#E74C3C" fillOpacity={0.6} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    No data available for this date range.
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-
-
-        {/* Drivers Tab */}
+        {/* 2. DRIVERS TAB */}
         <TabsContent value="drivers">
           <div className="space-y-6">
-            {/* Performance Radar */}
             <Card>
               <CardHeader>
-                <CardTitle>Driver Performance Metrics</CardTitle>
+                <CardTitle>Driver Performance Leaderboard</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-96">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={performanceMetrics}>
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="metric" />
-                      <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                      <Radar
-                        name="Performance"
-                        dataKey="value"
-                        stroke="#27AE60"
-                        fill="#27AE60"
-                        fillOpacity={0.6}
-                      />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Driver Comparison */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Driver Comparison</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {driverPerformance.map((driver) => (
-                    <div
-                      key={driver.driver}
-                      className="p-4 rounded-lg border border-gray-200 dark:border-gray-700"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center">
-                            <span className="text-white text-sm">
-                              {driver.driver.charAt(0)}
-                            </span>
-                          </div>
-                          <div>
-                            <h4 className="text-[#222B2D] dark:text-white">
-                              {driver.driver}
-                            </h4>
-                            <div className="flex items-center gap-1 text-sm">
-                              <span className="text-yellow-500">★</span>
-                              <span className="text-[#222B2D] dark:text-white">
-                                {driver.rating}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <Badge className="bg-[#27AE60] text-white">
-                          {driver.onTime}% On-Time
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">
-                            Total Deliveries
-                          </p>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {driver.deliveries}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">
-                            Success Rate
-                          </p>
-                          <p className="text-[#27AE60]">{driver.onTime}%</p>
-                        </div>
-                      </div>
+                {isLoading ? (
+                    <div className="space-y-4">
+                        <Skeleton className="h-20 w-full" />
+                        <Skeleton className="h-20 w-full" />
+                        <Skeleton className="h-20 w-full" />
                     </div>
-                  ))}
-                </div>
+                ) : (
+                    <div className="space-y-4">
+                    {driverStats.map((driver) => (
+                        <div key={driver.driver_id} className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center shadow-sm">
+                                <span className="text-white font-bold text-sm">
+                                    {driver.driver_name ? driver.driver_name.charAt(0).toUpperCase() : '?'}
+                                </span>
+                            </div>
+                            <div>
+                                <h4 className="text-[#222B2D] dark:text-white font-semibold">
+                                    {driver.driver_name || "Unknown Driver"}
+                                </h4>
+                                <p className="text-xs text-gray-500">
+                                    {driver.vehicle_type} • {driver.plate_number}
+                                </p>
+                            </div>
+                            </div>
+                            <Badge className={driver.success_rate > 90 ? "bg-green-600" : "bg-yellow-600"}>
+                                {driver.success_rate}% Success
+                            </Badge>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div className="text-center md:text-left">
+                            <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Assigned</p>
+                            <p className="font-mono font-semibold text-lg">{driver.total_assigned}</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                            <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Delivered</p>
+                            <p className="font-mono font-semibold text-lg text-green-600">{driver.completed_deliveries}</p>
+                            </div>
+                            <div className="text-center md:text-left">
+                            <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Revenue</p>
+                            <p className="font-mono font-semibold text-lg">₱{driver.revenue_generated?.toLocaleString() || 0}</p>
+                            </div>
+                        </div>
+                        </div>
+                    ))}
+                    {driverStats.length === 0 && <p className="text-center text-gray-500">No active drivers found for this period.</p>}
+                    </div>
+                )}
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        {/* Regions Tab */}
+        {/* 3. REGIONS TAB */}
         <TabsContent value="regions">
-          <div className="space-y-6">
-            {/* Area Coverage Map Placeholder */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Area Coverage Map</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-96 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-3">
-                    <MapPin className="w-16 h-16 text-[#27AE60] mx-auto" />
-                    <div>
-                      <h3 className="text-[#222B2D] dark:text-white mb-2">
-                        Regional Coverage Map
-                      </h3>
-                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60 max-w-md">
-                        Interactive heatmap showing delivery density and performance
-                        across Metro Manila. Powered by Google Maps API.
-                      </p>
-                    </div>
-                    <code className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">
-                      Google Maps API with Heatmap Layer
-                    </code>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Regional Statistics */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Regional Statistics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={areaCoverage} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" />
-                      <YAxis dataKey="area" type="category" />
-                      <Tooltip />
-                      <Bar dataKey="deliveries" fill="#27AE60" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Regional Statistics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[500px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={areaCoverage} layout="vertical" margin={{ left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" />
+                    <YAxis dataKey="area" type="category" width={100} />
+                    <Tooltip 
+                        formatter={(value: number) => [`₱${value.toLocaleString()}`, 'Revenue']}
+                    />
+                    <Bar dataKey="revenue" fill="#27AE60" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Custom Report Generator */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Custom Report Generator</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <Label className="mb-2 block">Select Fields</Label>
-                <Select defaultValue="all">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Fields</SelectItem>
-                    <SelectItem value="deliveries">Deliveries Only</SelectItem>
-                    <SelectItem value="revenue">Revenue Only</SelectItem>
-                    <SelectItem value="drivers">Drivers Only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-2 block">Date Range</Label>
-                <Select defaultValue="week">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="custom">Custom</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-2 block">Format</Label>
-                <Select defaultValue="pdf">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pdf">PDF</SelectItem>
-                    <SelectItem value="csv">CSV</SelectItem>
-                    <SelectItem value="excel">Excel</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <Button className="gap-2">
-                <FileText className="w-4 h-4" />
-                Generate Report
-              </Button>
-              <Button variant="outline" className="gap-2">
-                <Download className="w-4 h-4" />
-                Export Table Preview
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
+}
+
+// Helper Component for KPI Cards
+function KpiCard({ title, value, icon, colorBg, loading }: any) {
+    return (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-[#222B2D]/60 dark:text-white/60">{title}</p>
+                {loading ? (
+                    <Skeleton className="h-8 w-24 mt-2" />
+                ) : (
+                    <h3 className="text-[#222B2D] dark:text-white mt-1 text-2xl font-bold tracking-tight">{value}</h3>
+                )}
+              </div>
+              <div className={`w-12 h-12 rounded-xl ${colorBg} flex items-center justify-center transition-transform hover:scale-105`}>
+                {icon}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+    );
 }

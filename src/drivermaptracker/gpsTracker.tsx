@@ -17,14 +17,36 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
     let watchId: number | null = null;
 
     const startTracking = async () => {
+      // Check if geolocation is available and page is served securely
+      const isSecureOrigin = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+
       if (!navigator.geolocation) {
         console.warn("Geolocation not supported. Using fallback coords if available.");
         if (fallbackCoords) {
-          await supabase.from("driver_locations").upsert({
-            driver_id: driverId,
-            ...fallbackCoords,
-            is_moving: false,
-            recorded_at: new Date().toISOString(),
+          await supabase.rpc("update_driver_location", {
+            driver_uuid: driverId,
+            lat: fallbackCoords.latitude,
+            lng: fallbackCoords.longitude,
+            accuracy: fallbackCoords.accuracy,
+            speed: fallbackCoords.speed,
+            heading: fallbackCoords.heading,
+            altitude: fallbackCoords.altitude,
+          });
+        }
+        return;
+      }
+
+      if (!isSecureOrigin) {
+        console.warn("Geolocation requires HTTPS. Using fallback coords if available.");
+        if (fallbackCoords) {
+          await supabase.rpc("update_driver_location", {
+            driver_uuid: driverId,
+            lat: fallbackCoords.latitude,
+            lng: fallbackCoords.longitude,
+            accuracy: fallbackCoords.accuracy,
+            speed: fallbackCoords.speed,
+            heading: fallbackCoords.heading,
+            altitude: fallbackCoords.altitude,
           });
         }
         return;
@@ -36,28 +58,29 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
 
           if (!latitude || !longitude) return;
 
-          await supabase.from("driver_locations").upsert({
-            driver_id: driverId,
-            latitude,
-            longitude,
-            is_moving: speed && speed > 0,
-            recorded_at: new Date().toISOString(),
-            ...(accuracy !== undefined && { accuracy }),
-            ...(speed !== undefined && { speed }),
-            ...(heading !== undefined && { heading }),
-            ...(altitude !== undefined && { altitude }),
-          }, { onConflict: "driver_id" });
+          await supabase.rpc("update_driver_location", {
+            driver_uuid: driverId,
+            lat: latitude,
+            lng: longitude,
+            accuracy: accuracy,
+            speed: speed,
+            heading: heading,
+            altitude: altitude,
+          });
         },
         async (err) => {
           console.error("GPS error:", err);
 
           if ((err.code === 2 || err.code === 3) && fallbackCoords) {
             console.warn("Using fallback coordinates due to GPS error.");
-            await supabase.from("driver_locations").upsert({
-              driver_id: driverId,
-              ...fallbackCoords,
-              is_moving: false,
-              recorded_at: new Date().toISOString(),
+            await supabase.rpc("update_driver_location", {
+              driver_uuid: driverId,
+              lat: fallbackCoords.latitude,
+              lng: fallbackCoords.longitude,
+              accuracy: fallbackCoords.accuracy,
+              speed: fallbackCoords.speed,
+              heading: fallbackCoords.heading,
+              altitude: fallbackCoords.altitude,
             });
           }
         },
