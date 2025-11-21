@@ -30,7 +30,7 @@ interface DriverDashboardProps {
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
-  name: string;
+  driverName: string;
   stats: {
     total: number;
     completed: number;
@@ -45,7 +45,7 @@ export function DriverDashboard({
   onLogout,
   isDarkMode,
   onToggleDarkMode,
-  name,
+  driverName,
   stats,
 }: DriverDashboardProps) {
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function DriverDashboard({
   const mapRef = useRef<L.Map | null>(null);
 
   // Start GPS upload for this driver
-  useGPSUploader(name);
+  useGPSUploader(driverName);
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
 
@@ -123,7 +123,7 @@ export function DriverDashboard({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <div className="px-2 py-1.5">
-                    <p className="text-sm">{name}</p>
+                    <p className="text-sm">{driverName}</p>
                     <p className="text-xs text-gray-500">Driver</p>
                   </div>
                 </DropdownMenuContent>
