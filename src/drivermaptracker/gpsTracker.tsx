@@ -10,85 +10,72 @@ interface GPSCoords {
   altitude?: number;
 }
 
+/**
+ * Validates if a string is a proper UUID
+ */
+const isValidUUID = (uuid: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+
 export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
   useEffect(() => {
-    if (!driverId || driverId === "Driver") return;
+    if (!driverId || !isValidUUID(driverId)) {
+      console.warn("Invalid or missing driverId:", driverId);
+      return;
+    }
 
     let watchId: number | null = null;
 
+    const sendLocation = async (coords: GPSCoords) => {
+      const { latitude, longitude, accuracy, speed, heading, altitude } = coords;
+
+      if (!latitude || !longitude) return;
+
+      const { data, error } = await supabase.rpc("update_driver_location", {
+        driver_id: driverId,
+        lat: latitude,
+        lng: longitude,
+        accuracy: accuracy ?? null,
+        speed: speed ?? null,
+        heading: heading ?? null,
+        altitude: altitude ?? null,
+      });
+
+      if (error) {
+        console.error("Supabase RPC error:", error);
+      } else {
+        console.log("Location updated:", { latitude, longitude });
+      }
+    };
+
     const startTracking = async () => {
-      // Check if geolocation is available and page is served securely
-      const isSecureOrigin = window.location.protocol === 'https:' || window.location.hostname === 'localhost';
+      const isSecureOrigin =
+        window.location.protocol === "https:" || window.location.hostname === "localhost";
 
       if (!navigator.geolocation) {
         console.warn("Geolocation not supported. Using fallback coords if available.");
-        if (fallbackCoords) {
-          await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
-            lat: fallbackCoords.latitude,
-            lng: fallbackCoords.longitude,
-            accuracy: fallbackCoords.accuracy,
-            speed: fallbackCoords.speed,
-            heading: fallbackCoords.heading,
-            altitude: fallbackCoords.altitude,
-          });
-        }
+        if (fallbackCoords) await sendLocation(fallbackCoords);
         return;
       }
 
       if (!isSecureOrigin) {
         console.warn("Geolocation requires HTTPS. Using fallback coords if available.");
-        if (fallbackCoords) {
-          await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
-            lat: fallbackCoords.latitude,
-            lng: fallbackCoords.longitude,
-            accuracy: fallbackCoords.accuracy,
-            speed: fallbackCoords.speed,
-            heading: fallbackCoords.heading,
-            altitude: fallbackCoords.altitude,
-          });
-        }
+        if (fallbackCoords) await sendLocation(fallbackCoords);
         return;
       }
 
       watchId = navigator.geolocation.watchPosition(
         async (pos) => {
           const { latitude, longitude, accuracy, speed, heading, altitude } = pos.coords;
-
-          if (!latitude || !longitude) return;
-
-          await supabase.rpc("update_driver_location", {
-            driver_id: driverId,
-            lat: latitude,
-            lng: longitude,
-            accuracy: accuracy,
-            speed: speed,
-            heading: heading,
-            altitude: altitude,
-          });
+          await sendLocation({ latitude, longitude, accuracy, speed, heading, altitude });
         },
         async (err) => {
           console.error("GPS error:", err);
-
           if ((err.code === 2 || err.code === 3) && fallbackCoords) {
             console.warn("Using fallback coordinates due to GPS error.");
-            await supabase.rpc("update_driver_location", {
-              driver_id: driverId,
-              lat: fallbackCoords.latitude,
-              lng: fallbackCoords.longitude,
-              accuracy: fallbackCoords.accuracy,
-              speed: fallbackCoords.speed,
-              heading: fallbackCoords.heading,
-              altitude: fallbackCoords.altitude,
-            });
+            await sendLocation(fallbackCoords);
           }
         },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 1000,
-          timeout: 10000,
-        }
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
       );
     };
 
