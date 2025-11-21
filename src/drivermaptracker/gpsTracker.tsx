@@ -32,7 +32,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
               heading: fallbackCoords.heading,
               altitude: fallbackCoords.altitude,
             })
-            .eq("driver_uuid", driverId);
+            .eq("driver_id", driverId);
         }
         return;
       }
@@ -50,7 +50,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
               heading: fallbackCoords.heading,
               altitude: fallbackCoords.altitude,
             })
-            .eq("driver_uuid", driverId);
+            .eq("driver_id", driverId);
         }
         return;
       }
@@ -63,7 +63,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
           await supabase
             .from("driver_locations")
             .update({ latitude, longitude, accuracy, speed, heading, altitude })
-            .eq("driver_uuid", driverId);
+            .eq("driver_id", driverId);
         },
         async (err) => {
           console.error("GPS error:", err);
@@ -80,7 +80,7 @@ export function useGPSUploader(driverId: string, fallbackCoords?: GPSCoords) {
                 heading: fallbackCoords.heading,
                 altitude: fallbackCoords.altitude,
               })
-              .eq("driver_uuid", driverId);
+              .eq("driver_id", driverId);
           }
         },
         {
