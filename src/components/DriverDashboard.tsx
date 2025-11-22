@@ -12,6 +12,7 @@ import { useGPSUploader } from "../drivermaptracker/gpsTracker";
 import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { toast } from "sonner";
+import { supabase } from "../utils/supabase/client";
 
 interface Delivery {
   id: string;
@@ -50,11 +51,86 @@ export function DriverDashboard({
 }: DriverDashboardProps) {
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
+  const [driverId, setDriverId] = useState<string>("");
 
   const mapRef = useRef<L.Map | null>(null);
 
   // Start GPS upload for this driver
-  useGPSUploader(driverName);
+  useGPSUploader();
+
+  // Fetch driver ID
+  useEffect(() => {
+    const fetchDriverId = async () => {
+      const { data: authUserData } = await supabase.auth.getUser();
+      const userId = authUserData?.user?.id;
+      if (!userId) {
+        console.warn("No authenticated user found");
+        return;
+      }
+
+      const { data: driver, error } = await supabase
+        .from("drivers")
+        .select("id")
+        .eq("user_id", userId)
+        .single();
+
+      if (error) {
+        console.error("Failed to fetch driver UUID:", error);
+        return;
+      }
+
+      if (!driver?.id) {
+        console.error("Driver record not found for user:", userId);
+        return;
+      }
+
+      setDriverId(driver.id);
+    };
+
+    fetchDriverId();
+  }, []);
+
+  // Subscribe to driver's location updates
+  useEffect(() => {
+    if (!driverId) return;
+
+    const fetchInitialLocation = async () => {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("last_lat, last_lng")
+        .eq("id", driverId)
+        .single();
+
+      if (!error && data.last_lat && data.last_lng) {
+        setDriverLocation([data.last_lat, data.last_lng]);
+      }
+    };
+
+    fetchInitialLocation();
+
+    const channel = supabase
+      .channel(`driver-location-${driverId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "drivers",
+          filter: `id=eq.${driverId}`,
+        },
+        (payload) => {
+          const { last_lat, last_lng } = payload.new;
+          if (last_lat && last_lng) {
+            setDriverLocation([last_lat, last_lng]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [driverId]);
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
 
