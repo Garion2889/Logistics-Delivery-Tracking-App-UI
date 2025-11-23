@@ -206,7 +206,7 @@ export async function updateDriverStatus(
 // Fetch all drivers (join users + drivers tables)
 export async function fetchAllDrivers() {
   const { data, error } = await supabase
-    .from("drivers")
+    .from('drivers')
     .select(`
       id,
       user_id,
@@ -219,7 +219,7 @@ export async function fetchAllDrivers() {
         phone
       )
     `)
-    .order("created_at", { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 

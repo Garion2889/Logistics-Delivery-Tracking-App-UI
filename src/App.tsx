@@ -63,7 +63,7 @@ export default function App() {
   const [userId, setUserId] = useState(""); // Store admin/driver ID
   const [userRole, setUserRole] = useState<"admin" | "driver" | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([
     {
       id: "1",
@@ -98,7 +98,7 @@ export default function App() {
       amount: 300,
     },
   ]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
+
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
     open: boolean;
@@ -219,9 +219,12 @@ export default function App() {
 
 
   const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
-    setDrivers(prev => prev.map(d => d.id === driverId ? { ...d, ...updates } : d));
-    toast.success("Driver updated successfully");
+  setDrivers(prev =>
+    prev.map(d => (d.id === driverId ? { ...d, ...updates } : d))  // fixed spread
+  );
+  toast.success("Driver updated successfully");
   };
+
 
   const handleDeactivateDriver = async (driver: Driver) => {
   try {
