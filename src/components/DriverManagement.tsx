@@ -25,10 +25,18 @@ interface Driver {
 
 interface DriverManagementProps {
   drivers: Driver[];
-  onCreateDriver: () => void;
-  onEditDriver: (driver: Driver) => void;
+  onCreateDriver: (driverData: {
+    name: string;
+    email: string;
+    password: string;
+    phone: string;
+    vehicle: string;
+  }) => void | Promise<void>;
+  onEditDriver: (driver: Driver, updatedFields: any) => Promise<void>;
   onDeactivateDriver: (driver: Driver) => void;
 }
+
+
 
 export function DriverManagement({
   drivers,

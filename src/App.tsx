@@ -98,7 +98,7 @@ export default function App() {
       amount: 300,
     },
   ]);
-  
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
     open: boolean;
@@ -208,9 +208,15 @@ export default function App() {
   };
 
 
-  const handleEditDriver = (driver: Driver) => {
-    setEditDriverModal({ open: true, driver });
+  const handleEditDriver = async (payload: {
+  driver: Driver;
+  updatedFields: any;
+  }) => {
+  const { driver, updatedFields } = payload;
+  // your logic...
   };
+
+
 
   const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
     setDrivers(prev => prev.map(d => d.id === driverId ? { ...d, ...updates } : d));
@@ -371,10 +377,9 @@ export default function App() {
             ) : currentPage === "drivers" ? (
               <DriverManagement
                 drivers={drivers}
-                onCreateDriver={() => setCreateDriverModal(true)}
+                onCreateDriver={handleCreateDriver}
                 onEditDriver={handleEditDriver}
-                onDeactivateDriver={handleDeactivateDriver}
-              />
+                onDeactivateDriver={handleDeactivateDriver}/> 
             ) : currentPage === "returns" ? (
               <ReturnsPage />
             ) : currentPage === "settings" ? (

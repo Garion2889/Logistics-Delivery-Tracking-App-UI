@@ -206,7 +206,7 @@ export async function updateDriverStatus(
 // Fetch all drivers (join users + drivers tables)
 export async function fetchAllDrivers() {
   const { data, error } = await supabase
-    .from('drivers')
+    .from("drivers")
     .select(`
       id,
       user_id,
@@ -219,17 +219,17 @@ export async function fetchAllDrivers() {
         phone
       )
     `)
-    .order('created_at', { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  return data.map((d: any) => ({
+  return (data ?? []).map((d: any) => ({
     id: d.id,
-    name: d.users.full_name,
-    email: d.users.email,
-    phone: d.users.phone,
+    name: d.users?.full_name ?? "Unknown",
+    email: d.users?.email ?? "",
+    phone: d.users?.phone ?? "",
     vehicle: d.vehicle_type,
     status: d.status ?? "offline",
-    activeDeliveries: 0, // until you implement real count
+    activeDeliveries: 0,
   }));
 }
