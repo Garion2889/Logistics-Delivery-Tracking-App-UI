@@ -16,6 +16,7 @@ import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
+import { trackDelivery } from "./lib/supabase";
 import 'leaflet/dist/leaflet.css';
 
 import "./styles/globals.css";
@@ -32,6 +33,12 @@ interface Delivery {
   createdAt: string;
   phone?: string;
   amount?: number;
+  timeline?: {
+    status: string;
+    label: string;
+    date?: string;
+    completed: boolean;
+  }[];
 }
 
 interface Driver {
@@ -55,7 +62,40 @@ export default function App() {
   const [userRole, setUserRole] = useState<"admin" | "driver" | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([
+    {
+      id: "1",
+      refNo: "REF-001",
+      customer: "John Doe",
+      address: "123 Main St, Manila",
+      status: "delivered",
+      driver: "Driver 1",
+      createdAt: "2023-10-01 10:00 AM",
+      phone: "09123456789",
+      amount: 500,
+    },
+    {
+      id: "2",
+      refNo: "REF-002",
+      customer: "Jane Smith",
+      address: "456 Elm St, Quezon City",
+      status: "in-transit",
+      driver: "Driver 2",
+      createdAt: "2023-10-02 11:00 AM",
+      phone: "09876543210",
+      amount: 750,
+    },
+    {
+      id: "3",
+      refNo: "REF-003",
+      customer: "Bob Johnson",
+      address: "789 Oak St, Makati",
+      status: "pending",
+      createdAt: "2023-10-03 12:00 PM",
+      phone: "09112233445",
+      amount: 300,
+    },
+  ]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
@@ -154,6 +194,57 @@ export default function App() {
 
   const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
 
+  // Map database status to UI status
+  const mapStatus = (dbStatus: string): Delivery["status"] => {
+    const mapping: Record<string, Delivery["status"]> = {
+      'created': 'pending',
+      'assigned': 'assigned',
+      'picked_up': 'assigned',
+      'in_transit': 'in-transit',
+      'delivered': 'delivered',
+      'returned': 'returned',
+      'cancelled': 'returned',
+    };
+    return mapping[dbStatus] || 'pending';
+  };
+
+  const getStatusLabel = (status: string): string => {
+    const labels: Record<string, string> = {
+      'created': 'Order Created',
+      'assigned': 'Driver Assigned',
+      'picked_up': 'Package Picked Up',
+      'in_transit': 'In Transit',
+      'delivered': 'Delivered',
+      'returned': 'Returned',
+      'cancelled': 'Cancelled',
+    };
+    return labels[status] || status;
+  };
+
+  // Handle track delivery with Supabase
+  const handleTrackDelivery = async (refNo: string) => {
+    try {
+      const data = await trackDelivery(refNo);
+
+      // Transform to UI format
+      return {
+        refNo: data.ref_no,
+        customer: data.customer_name,
+        address: data.address,
+        status: mapStatus(data.status),
+        driver: data.driver?.name,
+        timeline: (data.history || []).map((h: any) => ({
+          status: mapStatus(h.status),
+          label: getStatusLabel(h.status),
+          completed: true,
+          date: new Date(h.created_at).toLocaleString(),
+        })),
+      };
+    } catch (error: any) {
+      return null;
+    }
+  };
+
   // Persist current page and dark mode whenever they change
   useEffect(() => {
     localStorage.setItem("currentPage", currentPage);
@@ -192,7 +283,7 @@ export default function App() {
       );
 
     case "tracking":
-      return <PublicTracking onNavigateToLogin={() => setCurrentView("login")} />;
+      return <PublicTracking onNavigateToLogin={() => setCurrentView("login")} onTrackDelivery={handleTrackDelivery} />;
 
     case "driver":
       return (
@@ -224,7 +315,7 @@ export default function App() {
             ) : currentPage === "dashboard" ? (
               <AdminDashboard stats={dashboardStats} />
             ) : currentPage === "deliveries" ? (
-              <DeliveryManagement deliveries={deliveries} onViewDelivery={setSelectedDelivery} />
+              <DeliveryManagement deliveries={deliveries} onViewDelivery={setSelectedDelivery} onAssignDriver={() => {}} onUpdateDelivery={() => {}} onMarkComplete={() => {}} />
             ) : currentPage === "drivers" ? (
               <DriverManagement
                 drivers={drivers}

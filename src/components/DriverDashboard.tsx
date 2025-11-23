@@ -12,6 +12,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useGPSUploader } from "../drivermaptracker/gpsTracker";
 import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "./ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
 import { PanToSelectedDriver } from "./PanToSelectedDriver";
@@ -54,15 +55,16 @@ export function DriverDashboard({
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
   const [driverId, setDriverId] = useState<string>("");
+  const [fetchedDriverName, setFetchedDriverName] = useState<string>("");
 
   const mapRef = useRef<L.Map | null>(null);
 
   // Start GPS upload for this driver
   useGPSUploader();
 
-  // Fetch driver ID
+  // Fetch driver ID and name
   useEffect(() => {
-    const fetchDriverId = async () => {
+    const fetchDriverData = async () => {
       const { data: authUserData } = await supabase.auth.getUser();
       const userId = authUserData?.user?.id;
       if (!userId) {
@@ -70,14 +72,15 @@ export function DriverDashboard({
         return;
       }
 
-      const { data: driver, error } = await supabase
+      // First get the driver record
+      const { data: driver, error: driverError } = await supabase
         .from("drivers")
         .select("id")
         .eq("user_id", userId)
         .single();
 
-      if (error) {
-        console.error("Failed to fetch driver UUID:", error);
+      if (driverError) {
+        console.error("Failed to fetch driver UUID:", driverError);
         return;
       }
 
@@ -87,9 +90,23 @@ export function DriverDashboard({
       }
 
       setDriverId(driver.id);
+
+      // Then get the user name
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("full_name")
+        .eq("id", userId)
+        .single();
+
+      if (userError) {
+        console.error("Failed to fetch user name:", userError);
+        return;
+      }
+
+      setFetchedDriverName(user?.full_name || "");
     };
 
-    fetchDriverId();
+    fetchDriverData();
   }, []);
 
   // Subscribe to driver's location updates
@@ -155,10 +172,69 @@ export function DriverDashboard({
   // New effect to use PanToSelectedDriver for better panning management
   const selectedDriverForPan = driverLocation ? { location: { lat: driverLocation[0], lng: driverLocation[1] } } : null;
 
+  const getStatusColor = (status: Delivery["status"]) => {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "assigned":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "in-transit":
+        return "bg-orange-100 text-orange-800 border-orange-200";
+      case "delivered":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "returned":
+        return "bg-red-100 text-red-800 border-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
-        {/* [Rest of header and main UI unchanged] */}
+        {/* Header */}
+        <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Truck className="w-6 h-6 text-[#27AE60]" />
+              <h1 className="text-[#222B2D] dark:text-white">Driver Dashboard</h1>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Profile Icon with Tooltip */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <User className="w-5 h-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{fetchedDriverName || driverName}</p>
+                </TooltipContent>
+              </Tooltip>
+              {/* Dark Mode Toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleDarkMode}
+              >
+                {isDarkMode ? (
+                  <Sun className="w-5 h-5" />
+                ) : (
+                  <Moon className="w-5 h-5" />
+                )}
+              </Button>
+              {/* Logout */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onLogout}
+                className="text-red-600"
+              >
+                <LogOut className="w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+        </header>
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
