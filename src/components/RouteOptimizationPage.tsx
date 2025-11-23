@@ -5,6 +5,9 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Calendar as CalendarIcon,
@@ -43,16 +46,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { cn } from "./ui/utils";
 
 interface Driver {
-  id: string;
-  name: string;
-  vehicle: string;
-  status: "online" | "in-transit" | "idle" | "offline";
-  currentRoute?: string;
-  deliveriesPerDay: number;
-  successRate: number;
-  distanceTraveled: number;
-  availableHours: string;
-  rating: number;
+id: string;
+name: string;
+vehicle: string;
+status: "online" | "in-transit" | "idle" | "offline";
+location?: { lat: number; lng: number };
+currentRoute?: string;
 }
 
 interface OptimizedRoute {
@@ -73,7 +72,11 @@ interface ScheduledDelivery {
   deliveries: number;
   status: "scheduled" | "in-progress" | "completed";
 }
-
+const driverIcon = new L.Icon({
+iconUrl: "/marker-icon.png", // or any custom marker
+iconSize: [25, 41],
+iconAnchor: [12, 41],
+});
 const mockDrivers: Driver[] = [
   {
     id: "1",
@@ -194,55 +197,92 @@ const mockScheduledDeliveries: ScheduledDelivery[] = [
   },
 ];
 
+
+  // Fetch real drivers from Supabase
 export function RouteOptimizationPage() {
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
-  const [drivers, setDrivers] = useState<Driver[]>(mockDrivers);
+const [drivers, setDrivers] = useState<Driver[]>([]);
 
   // Fetch real drivers from Supabase
-  useEffect(() => {
-    const fetchDrivers = async () => {
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('id, name, email, phone, vehicle_type, status, active_deliveries')
-        .eq('status', 'online');
+useEffect(() => {
+  const fetchDrivers = async () => {
+    const { data, error } = await supabase
+      .from('drivers')
+      .select('user_id, name, vehicle_type, status, last_lat, last_lng, last_location_update');
 
-      if (error) {
-        console.error('Error fetching drivers:', error);
-        return;
+
+    if (error) {
+      console.error('Error fetching drivers:', error);
+      return;
+    }
+
+    if (data) {
+      const formattedDrivers: Driver[] = data.map(d => ({
+        id: d.user_id,
+        name: d.name || '',
+        email: (d as any).email || '',
+        phone: (d as any).phone || '',
+        vehicle: d.vehicle_type,
+        status: d.status as Driver['status'],
+        activeDeliveries: (d as any).active_deliveries || 0,
+        location: {
+          lat: d.last_lat || 14.5547,
+          lng: d.last_lng || 121.0244,
+        },
+        completedStops: 0,
+        totalStops: 0,
+        distance: 0,
+        eta: 'N/A',
+        speed: 0,
+        lastUpdate: d.last_location_update
+          ? new Date(d.last_location_update).toLocaleTimeString()
+          : 'Just now',
+        currentRoute: '',
+        rating: 4.5,
+        deliveriesPerDay: 20,
+        successRate: 95,
+        distanceTraveled: 150,
+        availableHours: '8:00 AM - 6:00 PM',
+      }));
+
+      setDrivers(formattedDrivers);
+    }
+  };
+
+  fetchDrivers(); // call the async function inside useEffect
+
+
+  // Realtime subscription for driver location updates
+  const subscription = supabase
+    .channel('public:drivers')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'drivers' },
+      (payload) => {
+        const updatedDriver = payload.new as any;
+        setDrivers(prev =>
+          prev.map(d =>
+            d.id === updatedDriver.id
+              ? {
+                  ...d,
+                  location: { lat: updatedDriver.last_lat, lng: updatedDriver.last_lng },
+                  lastUpdate: updatedDriver.last_location_update
+                    ? new Date(updatedDriver.last_location_update).toLocaleTimeString()
+                    : 'Just now',
+                }
+              : d
+          )
+        );
       }
+    )
+    .subscribe();
 
-      if (data) {
-        const formattedDrivers: Driver[] = data.map(d => ({
-          id: d.id,
-          name: d.name,
-          email: d.email,
-          phone: d.phone,
-          vehicle: d.vehicle_type,
-          status: d.status as Driver["status"],
-          activeDeliveries: d.active_deliveries || 0,
-          location: { lat: 14.5547, lng: 121.0244 }, // Default location
-          completedStops: 0,
-          totalStops: 0,
-          distance: 0,
-          eta: "N/A",
-          speed: 0,
-          lastUpdate: "Just now",
-          currentRoute: "",
-          rating: 4.5,
-          deliveriesPerDay: 20,
-          successRate: 95,
-          distanceTraveled: 150,
-          availableHours: "8:00 AM - 6:00 PM",
-        }));
-        setDrivers(formattedDrivers);
-      }
-    };
+  return () => supabase.removeChannel(subscription);
+}, []);
 
-    fetchDrivers();
-  }, []);
 
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
@@ -610,70 +650,90 @@ export function RouteOptimizationPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {selectedRoute ? (
-                    <div className="space-y-4">
-                      {/* Map Preview */}
-                      <div className="h-64 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-                        <div className="text-center space-y-2">
-                          <MapPin className="w-12 h-12 text-[#27AE60] mx-auto" />
-                          <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                            Route map preview
-                          </p>
-                          <p className="text-xs text-[#222B2D]/40 dark:text-white/40">
-                            Google Maps API
-                          </p>
-                        </div>
-                      </div>
+  {selectedRoute ? (
+    <div className="space-y-4">
+      {/* Map Preview */}
+      <div className="h-64 rounded-lg overflow-hidden">
+        <MapContainer
+          center={[14.5547, 121.0244]} // Default center (can use first stop)
+          zoom={12}
+          className="h-full w-full"
+          scrollWheelZoom={false}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          />
 
-                      {/* Route Info */}
-                      <div className="space-y-3">
-                        <div>
-                          <Label className="text-xs">Route Name</Label>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {selectedRoute.name}
-                          </p>
-                        </div>
-                        <div>
-                          <Label className="text-xs">Assigned Driver</Label>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {selectedRoute.driver || "Unassigned"}
-                          </p>
-                        </div>
-                        <div>
-                          <Label className="text-xs">Priority</Label>
-                          <p
-                            className={`capitalize ${getPriorityColor(
-                              selectedRoute.priority
-                            )}`}
-                          >
-                            {selectedRoute.priority}
-                          </p>
-                        </div>
-                      </div>
+          {/* Driver Markers */}
+          {drivers
+            .filter(d => d.currentRoute === selectedRoute.name && d.location)
+            .map(d => (
+              <Marker
+                key={d.id}
+                position={[d.location!.lat, d.location!.lng]}
+                icon={L.divIcon({
+                  className:
+                    "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
+                  html: `<span class="text-xs">${d.name.charAt(0)}</span>`,
+                })}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <p className="font-semibold">{d.name}</p>
+                    <p>{d.vehicle}</p>
+                    <p>Status: {d.status}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+        </MapContainer>
+      </div>
 
-                      {/* Auto-Assignment Logic */}
-                      {!selectedRoute.driver && (
-                        <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                          <p className="text-sm text-blue-900 dark:text-blue-100 mb-2">
-                            Auto-assign nearest available driver?
-                          </p>
-                          <Button size="sm" className="w-full">
-                            Auto-Assign
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="h-64 flex items-center justify-center text-center">
-                      <div className="space-y-2">
-                        <Map className="w-12 h-12 text-[#222B2D]/20 dark:text-white/20 mx-auto" />
-                        <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                          Select a route to view details and preview
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
+      {/* Route Info */}
+      <div className="space-y-3">
+        <div>
+          <Label className="text-xs">Route Name</Label>
+          <p className="text-[#222B2D] dark:text-white">{selectedRoute.name}</p>
+        </div>
+        <div>
+          <Label className="text-xs">Assigned Driver</Label>
+          <p className="text-[#222B2D] dark:text-white">
+            {selectedRoute.driver || "Unassigned"}
+          </p>
+        </div>
+        <div>
+          <Label className="text-xs">Priority</Label>
+          <p className={`capitalize ${getPriorityColor(selectedRoute.priority)}`}>
+            {selectedRoute.priority}
+          </p>
+        </div>
+      </div>
+
+      {/* Auto-Assignment Logic */}
+      {!selectedRoute.driver && (
+        <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+          <p className="text-sm text-blue-900 dark:text-blue-100 mb-2">
+            Auto-assign nearest available driver?
+          </p>
+          <Button size="sm" className="w-full">
+            Auto-Assign
+          </Button>
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="h-64 flex items-center justify-center text-center">
+      <div className="space-y-2">
+        <Map className="w-12 h-12 text-[#222B2D]/20 dark:text-white/20 mx-auto" />
+        <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
+          Select a route to view details and preview
+        </p>
+      </div>
+    </div>
+  )}
+</CardContent>
+
               </Card>
             </div>
           </div>
@@ -890,18 +950,43 @@ export function RouteOptimizationPage() {
                 </p>
               </div>
 
-              {/* Map Preview */}
-              <div className="h-64 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-                <div className="text-center space-y-2">
-                  <Map className="w-16 h-16 text-[#27AE60] mx-auto" />
-                  <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                    Optimized routes preview
-                  </p>
-                  <p className="text-xs text-[#222B2D]/40 dark:text-white/40">
-                    Google Maps API placeholder
-                  </p>
-                </div>
-              </div>
+           <div className="h-64 rounded-lg overflow-hidden">
+  <MapContainer
+    center={[14.5547, 121.0244]} // default center
+    zoom={12}
+    className="h-full w-full"
+    scrollWheelZoom={false}
+  >
+    <TileLayer
+      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    />
+
+    {/* Driver markers on all routes */}
+    {drivers
+      .filter(d => d.location?.lat && d.location?.lng) // ensure valid coordinates
+      .map(d => (
+        <Marker
+          key={d.id}
+          position={[d.location!.lat, d.location!.lng]}
+          icon={L.divIcon({
+            className:
+              "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
+            html: `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#27AE60;color:white;font-size:10px;font-weight:bold;">${d.name.charAt(0)}</div>`,
+          })}
+        >
+          <Popup>
+            <div className="text-sm">
+              <p className="font-semibold">{d.name}</p>
+              <p>{d.vehicle}</p>
+              <p>Status: {d.status}</p>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+  </MapContainer>
+</div>
+
 
               {/* Optimization Results */}
               <div className="grid grid-cols-2 gap-4">

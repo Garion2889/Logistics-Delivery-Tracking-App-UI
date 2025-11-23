@@ -160,10 +160,6 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                   <Button className="w-full bg-[#27AE60] text-white" disabled={loading}>
                     {loading ? "Signing in..." : "Sign In as Admin"}
                   </Button>
-
-                  <p className="text-xs text-center text-[#222B2D]/60 mt-2">
-                    Test: admin@smartstock.ph / admin123
-                  </p>
                 </form>
               </TabsContent>
 
@@ -196,9 +192,6 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                     {loading ? "Signing in..." : "Sign In as Driver"}
                   </Button>
 
-                  <p className="text-xs text-center text-[#222B2D]/60 mt-2">
-                    Test: pedro@smartstock.ph / driver123
-                  </p>
                 </form>
               </TabsContent>
             </Tabs>
