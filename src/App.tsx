@@ -18,6 +18,8 @@ import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
 import { trackDelivery } from "./lib/supabase";
 import 'leaflet/dist/leaflet.css';
+import { fetchAllDrivers } from "./lib/supabase";
+import { supabase } from "./lib/supabase";
 
 import "./styles/globals.css";
 
@@ -96,7 +98,7 @@ export default function App() {
       amount: 300,
     },
   ]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
+  
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
     open: boolean;
@@ -158,26 +160,53 @@ export default function App() {
 
   const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
 
-  const handleCreateDriver = (driverData: {
+  const handleCreateDriver = async (driverData: {
     name: string;
     email: string;
     password: string;
     phone: string;
     vehicle: string;
-  }) => {
+    }) => {
+  try {
+    // Call your Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke("create-driver", {
+      body: {
         full_name: driverData.name,
+        email: driverData.email,
+        password: driverData.password,
+        phone: driverData.phone,
+        vehicle_type: driverData.vehicle, // e.g. "Motorcycle"
+      },
+    });
+
+    if (error) {
+      console.error("invoke error:", error);
+      throw error;
+    }
+    if (data?.error) {
+      console.error("function error:", data);
+      throw new Error(data.error || "Failed to create driver");
+    }
+
+    // Map the response into Driver type for the UI
     const newDriver: Driver = {
-      id: Date.now().toString(),
-      name: driverData.name,
-      email: driverData.email,
-      phone: driverData.phone,
-      vehicle: driverData.vehicle,
-      status: "offline",
-      activeDeliveries: 0,
+      id: data.driver.id,                       // drivers.id
+      name: data.user.full_name,               // users.full_name
+      email: data.user.email,
+      phone: data.user.phone,
+      vehicle: data.driver.vehicle_type,       // "motorcycle" / "car" / etc.
+      status: data.driver.status ?? "offline",
+      activeDeliveries: 0,                     // until wire real deliveries
     };
+
     setDrivers(prev => [...prev, newDriver]);
     toast.success(`Driver ${driverData.name} created successfully`);
+  } catch (err: any) {
+    console.error(err);
+    toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
+  }
   };
+
 
   const handleEditDriver = (driver: Driver) => {
     setEditDriverModal({ open: true, driver });
@@ -188,10 +217,24 @@ export default function App() {
     toast.success("Driver updated successfully");
   };
 
-  const handleDeactivateDriver = (driver: Driver) => {
-    setDrivers(prev => prev.map(d => d.id === driver.id ? { ...d, status: "offline" } : d));
+  const handleDeactivateDriver = async (driver: Driver) => {
+  try {
+    const { error } = await supabase
+      .from("drivers")
+      .update({ is_active: false, status: "offline" })
+      .eq("id", driver.id);
+
+    if (error) throw error;
+
+    // refresh
+    setDrivers(await fetchAllDrivers());
+
     toast.warning(`Driver ${driver.name} deactivated`);
+  } catch (err: any) {
+    toast.error(err.message);
+  }
   };
+
 
   const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
 
@@ -254,6 +297,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("isDarkMode", isDarkMode.toString());
   }, [isDarkMode]);
+
+  useEffect(() => {
+  if (userRole === "admin") {
+    fetchAllDrivers()
+      .then(setDrivers)
+      .catch(console.error);
+  }
+}, [userRole]);
 
   // ---------- Stats ----------
 
