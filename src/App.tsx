@@ -166,55 +166,59 @@ export default function App() {
     password: string;
     phone: string;
     vehicle: string;
-  }): Promise<void> => {
+    }): Promise<void> => {
     try {
-      console.log("Invoking create-driver Edge Function…");
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-driver`;
+    console.log("Calling Edge Function:", url);
 
-  const { data, error } = await supabase.functions.invoke("create-driver", {
-        body: {
-          full_name: driverData.name,
-          email: driverData.email,
-          password: driverData.password,
-          phone: driverData.phone,
-          vehicle_type: driverData.vehicle, // "Motorcycle", etc.
-        },
-      });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // send anon key as Bearer, function expects Authorization
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        full_name: driverData.name,
+        email: driverData.email,
+        password: driverData.password,
+        phone: driverData.phone,
+        vehicle_type: driverData.vehicle.toLowerCase(), // "motorcycle" | "car" | "van" | "truck"
+      }),
+    });
 
-      console.log("invoke result:", { data, error });
+    console.log("Edge function raw status:", res.status);
+    const data = await res.json().catch(() => null);
+    console.log("Edge function response body:", data);
 
-      if (error) {
-        console.error("invoke error:", error);
-        throw error;
-      }
-      if (data?.error) {
-        console.error("edge function error payload:", data);
-        throw new Error(data.error || "Edge function returned error");
-      }
-
-      // Map the response into Driver type for the UI (optional)
-  const newDriver: Driver = {
-        id: data.driver.id,                 // drivers.id
-        name: data.user.full_name,          // users.full_name
-        email: data.user.email,
-        phone: data.user.phone,
-        vehicle: data.driver.vehicle_type,  // "motorcycle" / "car" / etc.
-        status: data.driver.status ?? "offline",
-        activeDeliveries: 0,                // until we wire real deliveries
-      };
-
-      // Option 1: just append the new driver locally
-      setDrivers(prev => [...prev, newDriver]);
-
-      // Option 2 (safer): reload everything from DB
-      // const updated = await fetchAllDrivers();
-      // setDrivers(updated);
-
-      toast.success(`Driver ${driverData.name} created successfully`);
-    } catch (err: any) {
-      console.error("handleCreateDriver exception:", err);
-      toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
+    if (!res.ok || !data || data.error) {
+      const message =
+        data?.error ||
+        data?.dbError ||
+        data?.details ||
+        `HTTP ${res.status}`;
+      throw new Error(message);
     }
+
+    // Map response into your Driver type
+    const newDriver: Driver = {
+      id: data.driver.id,
+      name: data.user.full_name,
+      email: data.user.email,
+      phone: data.user.phone,
+      vehicle: data.driver.vehicle_type,
+      status: data.driver.status ?? "offline",
+      activeDeliveries: 0,
+    };
+
+    setDrivers((prev) => [newDriver, ...prev]);
+    toast.success(`Driver ${driverData.name} created successfully`);
+  } catch (err: any) {
+    console.error("handleCreateDriver exception:", err);
+    toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
+  }
   };
+
 
   const handleEditDriver = async (
     driver: Driver,
