@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -198,6 +199,50 @@ export function RouteOptimizationPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
+  const [drivers, setDrivers] = useState<Driver[]>(mockDrivers);
+
+  // Fetch real drivers from Supabase
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('id, name, email, phone, vehicle_type, status, active_deliveries')
+        .eq('status', 'online');
+
+      if (error) {
+        console.error('Error fetching drivers:', error);
+        return;
+      }
+
+      if (data) {
+        const formattedDrivers: Driver[] = data.map(d => ({
+          id: d.id,
+          name: d.name,
+          email: d.email,
+          phone: d.phone,
+          vehicle: d.vehicle_type,
+          status: d.status as Driver["status"],
+          activeDeliveries: d.active_deliveries || 0,
+          location: { lat: 14.5547, lng: 121.0244 }, // Default location
+          completedStops: 0,
+          totalStops: 0,
+          distance: 0,
+          eta: "N/A",
+          speed: 0,
+          lastUpdate: "Just now",
+          currentRoute: "",
+          rating: 4.5,
+          deliveriesPerDay: 20,
+          successRate: 95,
+          distanceTraveled: 150,
+          availableHours: "8:00 AM - 6:00 PM",
+        }));
+        setDrivers(formattedDrivers);
+      }
+    };
+
+    fetchDrivers();
+  }, []);
 
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
@@ -270,9 +315,9 @@ export function RouteOptimizationPage() {
                 <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
                   Total Drivers
                 </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {mockDrivers.length}
-                </h3>
+          <h3 className="text-[#222B2D] dark:text-white mt-1">
+            {drivers.length}
+          </h3>
                 <p className="text-xs text-[#27AE60] mt-1">
                   {mockDrivers.filter((d) => d.status !== "offline").length} active
                 </p>
@@ -313,13 +358,13 @@ export function RouteOptimizationPage() {
                 <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
                   Avg Success Rate
                 </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {(
-                    mockDrivers.reduce((sum, d) => sum + d.successRate, 0) /
-                    mockDrivers.length
-                  ).toFixed(1)}
-                  %
-                </h3>
+          <h3 className="text-[#222B2D] dark:text-white mt-1">
+            {(
+              drivers.reduce((sum, d) => sum + d.successRate, 0) /
+              drivers.length
+            ).toFixed(1)}
+            %
+          </h3>
                 <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
                   +2.3% this week
@@ -400,7 +445,7 @@ export function RouteOptimizationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockDrivers.map((driver) => (
+                  {drivers.map((driver) => (
                     <TableRow key={driver.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -653,7 +698,7 @@ export function RouteOptimizationPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockDrivers.map((driver) => (
+                  {drivers.map((driver) => (
                     <TableRow key={driver.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
@@ -730,12 +775,12 @@ export function RouteOptimizationPage() {
                 <CardTitle>Schedule Calendar</CardTitle>
               </CardHeader>
               <CardContent>
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={setDate}
-                  className="rounded-md border"
-                />
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={setDate}
+                className="rounded-md border bg-white dark:bg-gray-800 dark:text-white"
+              />
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm">
                     <div className="w-3 h-3 rounded-full bg-[#27AE60]"></div>

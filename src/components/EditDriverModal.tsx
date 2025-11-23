@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -41,11 +41,22 @@ export function EditDriverModal({
   onUpdate,
 }: EditDriverModalProps) {
   const [formData, setFormData] = useState({
-    name: driver?.name || "",
-    email: driver?.email || "",
-    phone: driver?.phone || "",
-    vehicle: driver?.vehicle || "",
+    name: "",
+    email: "",
+    phone: "",
+    vehicle: "",
   });
+
+  useEffect(() => {
+    if (driver) {
+      setFormData({
+        name: driver.name,
+        email: driver.email,
+        phone: driver.phone,
+        vehicle: driver.vehicle,
+      });
+    }
+  }, [driver]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

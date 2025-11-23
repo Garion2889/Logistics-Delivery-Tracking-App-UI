@@ -225,7 +225,7 @@ export function AnalyticsDashboard() {
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
+            <PopoverContent className="w-auto p-0 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700" align="end">
               <Calendar
                 initialFocus
                 mode="range"
@@ -233,6 +233,7 @@ export function AnalyticsDashboard() {
                 selected={dateRange}
                 onSelect={setDateRange}
                 numberOfMonths={2}
+                className="dark:bg-gray-800 dark:text-white"
               />
             </PopoverContent>
           </Popover>

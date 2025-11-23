@@ -1,41 +1,18 @@
-# Cleanup Progress - Remove Inventory, Supplier, and Payment UI
+# TODO: Fix Frontend Issues
 
-## ✅ Completed Steps
-
-### Step 1: Update Navigation (AdminLayout.tsx)
-- [x] Removed "inventory" navigation item
-- [x] Removed "payments" navigation item
-- [x] Kept: tracking, routes, analytics (as requested)
-
-### Step 2: Update Routing (AppWithSupabase.tsx)
-- [x] Added routing for tracking, routes, analytics pages
-- [x] Removed inventory and payment page routing
-
-## ✅ Completed Steps
-
-### Step 3: Delete Inventory-Related Files (8 files)
-- [x] AddProductModal.tsx
-- [x] InventoryLayout.tsx
-- [x] ProductCatalog.tsx
-- [x] StockAdjustmentModal.tsx
-- [x] StockLevelManagement.tsx
-- [x] CategoryManagementModal.tsx
-- [x] ReorderModal.tsx
-- [x] ReorderProcessing.tsx
-
-### Step 4: Delete Supplier-Related Files (3 files)
-- [x] AddSupplierModal.tsx
-- [x] SupplierDetails.tsx
-- [x] SupplierManagement.tsx
-
-### Step 5: Delete Payment-Related Files (1 file)
-- [x] PaymentOperationsPage.tsx
-
-## 📋 Summary
-- Total files deleted: 12
-- Files updated: 3
-- Features kept: Dashboard, Deliveries, Drivers, Tracking, Routes, Analytics, Returns, Reports, Settings
-- Features removed: Inventory, Supplier Management, Payment Operations, Revenue Trend Chart
-
-## 🎯 Final Result
-The codebase has been successfully cleaned up by removing all inventory, supplier management, payment UI components, and revenue trend chart while preserving the core delivery tracking functionality and the requested features (tracking, routes, analytics).
+## Tasks
+- [x] Fix Calendar in AnalyticsDashboard for dark mode
+- [x] Fix Calendar in RouteOptimizationPage for dark mode
+- [x] Fix Mobile Dark Mode Sidebar in AdminLayout
+- [x] Add real data fetching for drivers in RealTimeTrackingPage
+- [x] Add real data fetching for drivers in RouteOptimizationPage
+- [x] Fix frontend logic of RealTimeTrackingPage
+  - [x] Updated Driver interface to match database schema
+  - [x] Fixed data fetching to use correct fields (last_lat, last_lng)
+  - [x] Added real-time subscriptions for driver updates
+  - [x] Display all drivers on map with proper markers
+  - [x] Fixed playback speed state (array for Slider component)
+  - [x] Added geofence circles to map
+  - [x] Improved error handling
+  - [x] Fixed status labels and colors
+- [ ] Test the functionality on mobile and desktop

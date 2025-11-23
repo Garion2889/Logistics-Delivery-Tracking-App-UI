@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Package, Truck, CheckCircle2, RotateCcw } from "lucide-react";
@@ -8,6 +9,7 @@ import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { supabase } from "../utils/supabase/client";
+import { PanToSelectedDriver } from "./PanToSelectedDriver";
 
 interface DashboardStats {
   pendingOrders: number;
@@ -30,6 +32,7 @@ interface LiveDriverLocation {
 
 export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
+  const [selectedDriver, setSelectedDriver] = useState<LiveDriverLocation | null>(null);
 
   // Subscribe to real-time driver GPS updates
   useEffect(() => {
@@ -58,6 +61,21 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Auto-select latest updated driver to pan map to
+  useEffect(() => {
+    if (driverLocations.length === 0) {
+      setSelectedDriver(null);
+      return;
+    }
+
+    // Sort by latest recorded_at descending
+    const sortedDrivers = [...driverLocations].sort(
+      (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+    );
+
+    setSelectedDriver(sortedDrivers[0]);
+  }, [driverLocations]);
 
   const deliveryStatusData = [
     { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
@@ -198,13 +216,18 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         </CardHeader>
         <CardContent>
           <MapContainer
-            center={[14.5995, 120.9842]}
+            center={selectedDriver ? [selectedDriver.latitude, selectedDriver.longitude] : [14.5995, 120.9842]}
             zoom={13}
             style={{ height: "400px", width: "100%" }}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; OpenStreetMap contributors'
+            />
+            <PanToSelectedDriver 
+              selectedDriver={selectedDriver ? { 
+                location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } 
+              } : null} 
             />
             {driverLocations.map((driver) => (
               <Marker

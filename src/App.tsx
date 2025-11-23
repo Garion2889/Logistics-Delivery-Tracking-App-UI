@@ -15,7 +15,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import 'leaflet/dist/leaflet.css';
 
 import "./styles/globals.css";

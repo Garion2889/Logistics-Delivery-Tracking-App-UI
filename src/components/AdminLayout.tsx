@@ -26,7 +26,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 
 interface AdminLayoutProps {
-  children: ReactNode;
+  children: React.ReactNode;
   currentPage: string;
   onNavigate: (page: string) => void;
   onLogout: () => void;
@@ -126,6 +126,8 @@ export function AdminLayout({
         <aside className="hidden md:fixed md:inset-y-0 md:flex md:w-20 lg:w-64 md:flex-col bg-white dark:bg-[#1a2123] border-r border-gray-200 dark:border-gray-700 z-20">
           <SidebarContent />
         </aside>
+
+
 
         {/* Main Content */}
         <div className="md:pl-20 lg:pl-64">

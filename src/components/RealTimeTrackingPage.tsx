@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -6,11 +7,11 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // Import Leaflet components
-import 'leaflet/dist/leaflet.css'; // Import Leaflet CSS
-import L from 'leaflet'; // Import Leaflet for marker icons
-import markerIcon from 'leaflet/dist/images/marker-icon.png'; // Import marker icon
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'; // Import marker shadow
+import { MapContainer, TileLayer, Marker, Popup, Circle as LeafletCircle } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import {
   MapPin,
   Navigation,
@@ -23,12 +24,13 @@ import {
   SkipBack,
   SkipForward,
   Search,
-  Filter,
   Circle,
   Users,
   TrendingUp,
   Navigation2,
 } from "lucide-react";
+import { PanToSelectedDriver } from "./PanToSelectedDriver";
+
 import {
   Select,
   SelectContent,
@@ -38,19 +40,28 @@ import {
 } from "./ui/select";
 
 interface Driver {
-  id: string;
-  name: string;
-  status: "online" | "in-transit" | "idle" | "offline";
-  location: { lat: number; lng: number };
-  speed: number;
-  lastUpdate: string;
-  vehicle: string;
+  id: string; // uuid
+  user_id: string; // uuid
+  name: string | null;
+  vehicle_type: 'motorcycle' | 'car' | 'van' | 'truck';
+  plate_number: string | null;
+  license_number?: string | null;
+  status: 'online' | 'offline' | 'on_delivery' | 'maintenance';
+  last_lat: number | null;
+  last_lng: number | null;
+  last_location_update: string | null;
+  is_active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   currentRoute?: string;
   completedStops: number;
   totalStops: number;
   distance: number;
   eta: string;
+  speed: number;
+  lastUpdate: string;
 }
+
 
 interface GeofenceZone {
   id: string;
@@ -76,62 +87,7 @@ interface LocationHistory {
     shadowUrl: markerShadow,
     shadowSize: [41, 41],
   });
-const mockDrivers: Driver[] = [
-  {
-    id: "1",
-    name: "Pedro Reyes",
-    status: "in-transit",
-    location: { lat: 14.5547, lng: 121.0244 },
-    speed: 45,
-    lastUpdate: "2 min ago",
-    vehicle: "Motorcycle",
-    currentRoute: "Route A - Metro Manila North",
-    completedStops: 3,
-    totalStops: 8,
-    distance: 12.5,
-    eta: "2:30 PM",
-  },
-  {
-    id: "2",
-    name: "Carlos Mendoza",
-    status: "in-transit",
-    location: { lat: 14.5995, lng: 120.9842 },
-    speed: 38,
-    lastUpdate: "5 min ago",
-    vehicle: "Van",
-    currentRoute: "Route B - Metro Manila South",
-    completedStops: 5,
-    totalStops: 10,
-    distance: 18.3,
-    eta: "4:15 PM",
-  },
-  {
-    id: "3",
-    name: "Luis Ramos",
-    status: "idle",
-    location: { lat: 14.6091, lng: 121.0223 },
-    speed: 0,
-    lastUpdate: "1 min ago",
-    vehicle: "Truck",
-    completedStops: 0,
-    totalStops: 0,
-    distance: 0,
-    eta: "N/A",
-  },
-  {
-    id: "4",
-    name: "Miguel Santos",
-    status: "online",
-    location: { lat: 14.5764, lng: 121.0851 },
-    speed: 0,
-    lastUpdate: "Just now",
-    vehicle: "Motorcycle",
-    completedStops: 0,
-    totalStops: 0,
-    distance: 0,
-    eta: "N/A",
-  },
-];
+const mockDrivers: Driver[] = [];
 
 const mockGeofences: GeofenceZone[] = [
   {
@@ -195,23 +151,116 @@ const mockLocationHistory: LocationHistory[] = [
 ];
 
 export function RealTimeTrackingPage() {
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(
-    mockDrivers[0]
-  );
+  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState([1]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [drivers, setDrivers] = useState<Driver[]>(mockDrivers);
+
+  // Fetch real drivers from Supabase with their locations
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('drivers')
+          .select(`
+            id,
+            user_id,
+            name,
+            vehicle_type,
+            plate_number,
+            license_number,
+            status,
+            last_lat,
+            last_lng,
+            last_location_update,
+            is_active,
+            created_at,
+            updated_at
+          `);
+
+        if (error) {
+          console.error('Error fetching drivers:', error);
+          return;
+        }
+
+        if (data) {
+          const formattedDrivers: Driver[] = data.map(d => {
+            const location = d.last_lat && d.last_lng 
+              ? { lat: d.last_lat, lng: d.last_lng }
+              : null;
+            
+            return {
+              id: d.id,
+              user_id: d.user_id,
+              name: d.name,
+              vehicle_type: d.vehicle_type,
+              plate_number: d.plate_number,
+              license_number: d.license_number,
+              status: d.status as Driver["status"],
+              last_lat: d.last_lat,
+              last_lng: d.last_lng,
+              last_location_update: d.last_location_update,
+              is_active: d.is_active,
+              created_at: d.created_at,
+              updated_at: d.updated_at,
+              location,
+              completedStops: 0,
+              totalStops: 0,
+              distance: 0,
+              eta: "N/A",
+              speed: 0,
+              lastUpdate: d.last_location_update ? new Date(d.last_location_update).toLocaleTimeString() : "Unknown",
+              currentRoute: "",
+            };
+          });
+          
+          setDrivers(formattedDrivers);
+          
+          // Set first driver with location as selected
+          const driverWithLocation = formattedDrivers.find(d => d.location !== null);
+          if (driverWithLocation && !selectedDriver) {
+            setSelectedDriver(driverWithLocation);
+          }
+        }
+      } catch (err) {
+        console.error('Error in fetchDrivers:', err);
+      }
+    };
+
+    fetchDrivers();
+
+    // Subscribe to real-time driver updates
+    const channel = supabase
+      .channel('drivers-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'drivers',
+        },
+        (payload) => {
+          console.log('Driver update received:', payload);
+          // Refetch drivers on any change
+          fetchDrivers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
       case "online":
         return "bg-[#27AE60] text-white";
-      case "in-transit":
+      case "on_delivery":
         return "bg-blue-600 text-white";
-      case "idle":
-        return "bg-yellow-600 text-white";
       case "offline":
         return "bg-gray-600 text-white";
       default:
@@ -219,8 +268,46 @@ export function RealTimeTrackingPage() {
     }
   };
 
-  const filteredDrivers = mockDrivers.filter((driver) => {
-    const matchesSearch = driver.name
+  const getStatusLabel = (status: Driver["status"]) => {
+    switch (status) {
+      case "online":
+        return "Online";
+      case "on_delivery":
+        return "On Delivery";
+      case "offline":
+        return "Offline";
+      default:
+        return status;
+    }
+  };
+
+  const getMarkerColor = (status: Driver["status"]) => {
+    switch (status) {
+      case "online":
+        return "#27AE60";
+      case "on_delivery":
+        return "#3498DB";
+      case "offline":
+        return "#95A5A6";
+      default:
+        return "#95A5A6";
+    }
+  };
+
+  const createColoredIcon = (color: string) => {
+    return new L.Icon({
+      iconUrl: markerIcon,
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowUrl: markerShadow,
+      shadowSize: [41, 41],
+      className: `marker-${color.replace('#', '')}`,
+    });
+  };
+
+  const filteredDrivers = drivers.filter((driver) => {
+    const matchesSearch = (driver.name ?? '')
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
     const matchesStatus =
@@ -281,10 +368,10 @@ export function RealTimeTrackingPage() {
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
                   {
-                    mockDrivers.filter((d) => d.status !== "offline")
+                    drivers.filter((d) => d.status !== "offline")
                       .length
                   }
-                  /{mockDrivers.length}
+                  /{drivers.length}
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-lg bg-[#27AE60]/10 flex items-center justify-center">
@@ -303,7 +390,7 @@ export function RealTimeTrackingPage() {
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
                   {
-                    mockDrivers.filter((d) => d.status === "in-transit")
+                    drivers.filter((d) => d.status === "on_delivery")
                       .length
                   }
                 </h3>
@@ -323,7 +410,7 @@ export function RealTimeTrackingPage() {
                   Total Distance
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {mockDrivers
+                  {drivers
                     .reduce((sum, d) => sum + d.distance, 0)
                     .toFixed(1)}{" "}
                   km
@@ -384,8 +471,7 @@ export function RealTimeTrackingPage() {
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="online">Online</SelectItem>
-                  <SelectItem value="in-transit">In Transit</SelectItem>
-                  <SelectItem value="idle">Idle</SelectItem>
+                  <SelectItem value="on_delivery">On Delivery</SelectItem>
                   <SelectItem value="offline">Offline</SelectItem>
                 </SelectContent>
               </Select>
@@ -402,6 +488,13 @@ export function RealTimeTrackingPage() {
                       ? "border-[#27AE60] bg-[#27AE60]/5"
                       : "border-transparent bg-gray-50 dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
                   }`}
+                  tabIndex={0}
+                  role="button"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      setSelectedDriver(driver);
+                    }
+                  }}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -409,13 +502,13 @@ export function RealTimeTrackingPage() {
                         {driver.name}
                       </h4>
                       <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                        {driver.vehicle}
+                        {driver.vehicle_type}
                       </p>
                     </div>
                     <Badge
                       className={`text-xs ${getStatusColor(driver.status)}`}
                     >
-                      {driver.status}
+                      {getStatusLabel(driver.status)}
                     </Badge>
                   </div>
 
@@ -447,20 +540,71 @@ export function RealTimeTrackingPage() {
           {/* Map Card */}
           <Card>
             <CardContent className="p-0">
-              {/* Map Placeholder with Google Maps API integration note */}
+              {/* Map with real driver locations */}
               <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-                <MapContainer center={[14.5995, 120.9842]} zoom={13} style={{ height: "400px", width: "100%" }}>
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            />
-            {/* Example Marker */}
-            <Marker position={[14.5995, 120.9842]} icon={defaultIcon}>
-              <Popup>
-                A live driver is here.
-              </Popup>
-            </Marker>
-          </MapContainer>
+                <MapContainer 
+                  center={selectedDriver?.location ? [selectedDriver.location.lat, selectedDriver.location.lng] : [14.5995, 120.9842]} 
+                  zoom={13} 
+                  style={{ height: "400px", width: "100%" }}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  
+                  <PanToSelectedDriver selectedDriver={selectedDriver} />
+                  
+                  {/* Render all drivers with locations */}
+                  {drivers.map((driver) => {
+                    if (!driver.location) return null;
+                    
+                    return (
+                      <Marker 
+                        key={driver.id}
+                        position={[driver.location.lat, driver.location.lng]} 
+                        icon={createColoredIcon(getMarkerColor(driver.status))}
+                      >
+                        <Popup>
+                          <div className="p-2">
+                            <h4 className="font-semibold">{driver.name}</h4>
+                            <p className="text-sm text-gray-600">Vehicle: {driver.vehicle_type}</p>
+                            <p className="text-sm text-gray-600">Status: {getStatusLabel(driver.status)}</p>
+                            {driver.plate_number && (
+                              <p className="text-sm text-gray-600">Plate: {driver.plate_number}</p>
+                            )}
+                            <p className="text-sm text-gray-600">Speed: {driver.speed} km/h</p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
+
+                  {/* Render geofence zones */}
+                  {mockGeofences.filter(z => z.active).map((zone) => {
+                    if (zone.type === "circle" && zone.center && zone.radius) {
+                      return (
+                        <LeafletCircle
+                          key={zone.id}
+                          center={[zone.center.lat, zone.center.lng]}
+                          radius={zone.radius}
+                          pathOptions={{
+                            color: zone.color,
+                            fillColor: zone.color,
+                            fillOpacity: 0.2,
+                          }}
+                        >
+                          <Popup>
+                            <div className="p-2">
+                              <h4 className="font-semibold">{zone.name}</h4>
+                              <p className="text-sm text-gray-600">Radius: {zone.radius}m</p>
+                            </div>
+                          </Popup>
+                        </LeafletCircle>
+                      );
+                    }
+                    return null;
+                  })}
+                </MapContainer>
 
                 {/* Map Legend */}
                 <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 space-y-2">
@@ -477,13 +621,13 @@ export function RealTimeTrackingPage() {
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full bg-blue-600"></div>
                       <span className="text-[#222B2D]/60 dark:text-white/60">
-                        In Transit
+                        On Delivery
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-yellow-600"></div>
+                      <div className="w-3 h-3 rounded-full bg-gray-600"></div>
                       <span className="text-[#222B2D]/60 dark:text-white/60">
-                        Idle
+                        Offline
                       </span>
                     </div>
                     <div className="flex items-center gap-2">

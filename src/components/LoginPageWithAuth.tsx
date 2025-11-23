@@ -10,7 +10,7 @@ import { projectId } from "../utils/supabase/info";
 import { toast } from "sonner@2.0.3";
 
 interface LoginPageWithAuthProps {
-  onLogin: (token: string, role: string, id: string) => void;
+  onLogin: (token: string, role: "admin" | "driver", id: string) => void;
   onShowTracking: () => void;
 }
 

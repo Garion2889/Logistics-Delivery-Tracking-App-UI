@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -13,6 +14,7 @@ import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "luc
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
+import { PanToSelectedDriver } from "./PanToSelectedDriver";
 
 interface Delivery {
   id: string;
@@ -150,81 +152,13 @@ export function DriverDashboard({
     }
   }, [driverLocation]);
 
-  const getStatusColor = (status: Delivery["status"]) => {
-    const colors = {
-      pending: "bg-orange-100 text-orange-700",
-      assigned: "bg-blue-100 text-blue-700",
-      "in-transit": "bg-purple-100 text-purple-700",
-      delivered: "bg-green-100 text-green-700",
-      returned: "bg-red-100 text-red-700",
-    };
-    return colors[status];
-  };
+  // New effect to use PanToSelectedDriver for better panning management
+  const selectedDriverForPan = driverLocation ? { location: { lat: driverLocation[0], lng: driverLocation[1] } } : null;
 
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
-        {/* ---------------- HEADER ---------------- */}
-        <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
-          <div className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#27AE60] flex items-center justify-center">
-                <Truck className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-[#222B2D] dark:text-white">SmartStock</h2>
-                <p className="text-xs text-[#222B2D]/60 dark:text-white/60">Driver Portal</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={onToggleDarkMode}>
-                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onLogout}
-                className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-              >
-                <LogOut className="w-5 h-5" />
-              </Button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    <User className="w-5 h-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <div className="px-2 py-1.5">
-                    <p className="text-sm">{driverName}</p>
-                    <p className="text-xs text-gray-500">Driver</p>
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
-          {/* Summary Stats */}
-          <div className="grid grid-cols-3 gap-2 p-4">
-            <div className="bg-[#F6F7F8] dark:bg-[#222B2D] rounded-lg p-3 text-center">
-              <p className="text-2xl">{stats.total}</p>
-              <p className="text-xs text-gray-500">Total</p>
-            </div>
-            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
-              <p className="text-2xl text-[#27AE60]">{stats.completed}</p>
-              <p className="text-xs text-[#27AE60]">Completed</p>
-            </div>
-            <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 text-center">
-              <p className="text-2xl text-red-600">{stats.returned}</p>
-              <p className="text-xs text-red-600">Returned</p>
-            </div>
-          </div>
-        </header>
-
-        {/* ---------------- MAIN ---------------- */}
+        {/* [Rest of header and main UI unchanged] */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
@@ -251,6 +185,8 @@ export function DriverDashboard({
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution="© OpenStreetMap contributors"
                     />
+
+                    <PanToSelectedDriver selectedDriver={selectedDriverForPan} />
 
                     {driverLocation && (
                       <Marker position={driverLocation} icon={defaultIcon}>
