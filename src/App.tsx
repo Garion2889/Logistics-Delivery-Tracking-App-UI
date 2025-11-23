@@ -63,7 +63,7 @@ export default function App() {
   const [userId, setUserId] = useState(""); // Store admin/driver ID
   const [userRole, setUserRole] = useState<"admin" | "driver" | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
+  
   const [deliveries, setDeliveries] = useState<Delivery[]>([
     {
       id: "1",
@@ -98,7 +98,7 @@ export default function App() {
       amount: 300,
     },
   ]);
-
+  const [drivers, setDrivers] = useState<Driver[]>([]);
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
     open: boolean;
@@ -166,57 +166,63 @@ export default function App() {
     password: string;
     phone: string;
     vehicle: string;
-    }) => {
-  try {
-    // Call your Supabase Edge Function
-    const { data, error } = await supabase.functions.invoke("create-driver", {
-      body: {
-        full_name: driverData.name,
-        email: driverData.email,
-        password: driverData.password,
-        phone: driverData.phone,
-        vehicle_type: driverData.vehicle, // e.g. "Motorcycle"
-      },
-    });
+  }): Promise<void> => {
+    try {
+      console.log("Invoking create-driver Edge Function…");
 
-    if (error) {
-      console.error("invoke error:", error);
-      throw error;
+  const { data, error } = await supabase.functions.invoke("create-driver", {
+        body: {
+          full_name: driverData.name,
+          email: driverData.email,
+          password: driverData.password,
+          phone: driverData.phone,
+          vehicle_type: driverData.vehicle, // "Motorcycle", etc.
+        },
+      });
+
+      console.log("invoke result:", { data, error });
+
+      if (error) {
+        console.error("invoke error:", error);
+        throw error;
+      }
+      if (data?.error) {
+        console.error("edge function error payload:", data);
+        throw new Error(data.error || "Edge function returned error");
+      }
+
+      // Map the response into Driver type for the UI (optional)
+  const newDriver: Driver = {
+        id: data.driver.id,                 // drivers.id
+        name: data.user.full_name,          // users.full_name
+        email: data.user.email,
+        phone: data.user.phone,
+        vehicle: data.driver.vehicle_type,  // "motorcycle" / "car" / etc.
+        status: data.driver.status ?? "offline",
+        activeDeliveries: 0,                // until we wire real deliveries
+      };
+
+      // Option 1: just append the new driver locally
+      setDrivers(prev => [...prev, newDriver]);
+
+      // Option 2 (safer): reload everything from DB
+      // const updated = await fetchAllDrivers();
+      // setDrivers(updated);
+
+      toast.success(`Driver ${driverData.name} created successfully`);
+    } catch (err: any) {
+      console.error("handleCreateDriver exception:", err);
+      toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
     }
-    if (data?.error) {
-      console.error("function error:", data);
-      throw new Error(data.error || "Failed to create driver");
-    }
-
-    // Map the response into Driver type for the UI
-    const newDriver: Driver = {
-      id: data.driver.id,                       // drivers.id
-      name: data.user.full_name,               // users.full_name
-      email: data.user.email,
-      phone: data.user.phone,
-      vehicle: data.driver.vehicle_type,       // "motorcycle" / "car" / etc.
-      status: data.driver.status ?? "offline",
-      activeDeliveries: 0,                     // until wire real deliveries
-    };
-
-    setDrivers(prev => [...prev, newDriver]);
-    toast.success(`Driver ${driverData.name} created successfully`);
-  } catch (err: any) {
-    console.error(err);
-    toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
-  }
   };
 
-
-  const handleEditDriver = async (payload: {
-  driver: Driver;
-  updatedFields: any;
-  }) => {
-  const { driver, updatedFields } = payload;
-  // your logic...
+  const handleEditDriver = async (
+    driver: Driver,
+    updatedFields: any
+  ): Promise<void> => {
+    // For now, just forward to handleUpdateDriver
+    handleUpdateDriver(driver.id, updatedFields);
   };
-
-
 
   const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
   setDrivers(prev =>
