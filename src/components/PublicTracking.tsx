@@ -145,7 +145,6 @@ if (intervalRef.current) clearInterval(intervalRef.current);
 return ( <div className="min-h-screen bg-[#F6F7F8] flex items-center justify-center p-4"> <div className="w-full max-w-2xl space-y-6">
 {/* Header */} <div className="text-center space-y-3"> <div className="flex items-center justify-center gap-3 mb-4"> <div className="w-14 h-14 rounded-xl bg-[#27AE60] flex items-center justify-center"> <Truck className="w-8 h-8 text-white" /> </div> <div className="text-left"> <h1 className="text-[#222B2D]">SmartStock Logistics</h1> <p className="text-sm text-[#222B2D]/60">Track Your Delivery</p> </div> </div> </div>
 
-```
     {/* Search Form */}
     {!delivery && (
       <Card className="border-0 shadow-lg">
