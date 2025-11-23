@@ -203,3 +203,33 @@ export async function updateDriverStatus(
 
   if (error) throw error;
 }
+// Fetch all drivers (join users + drivers tables)
+export async function fetchAllDrivers() {
+  const { data, error } = await supabase
+    .from('drivers')
+    .select(`
+      id,
+      user_id,
+      vehicle_type,
+      status,
+      is_active,
+      users (
+        full_name,
+        email,
+        phone
+      )
+    `)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  return data.map((d: any) => ({
+    id: d.id,
+    name: d.users.full_name,
+    email: d.users.email,
+    phone: d.users.phone,
+    vehicle: d.vehicle_type,
+    status: d.status ?? "offline",
+    activeDeliveries: 0, // until you implement real count
+  }));
+}

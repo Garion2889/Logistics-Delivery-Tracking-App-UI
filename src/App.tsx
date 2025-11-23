@@ -165,6 +165,7 @@ export default function App() {
     phone: string;
     vehicle: string;
   }) => {
+        full_name: driverData.name,
     const newDriver: Driver = {
       id: Date.now().toString(),
       name: driverData.name,
