@@ -34,6 +34,7 @@ interface DriverManagementProps {
   }) => void | Promise<void>;
   onEditDriver: (driver: Driver, updatedFields: any) => Promise<void>;
   onDeactivateDriver: (driver: Driver) => void;
+  onShowCreateDriverModal: () => void; 
 }
 
 
@@ -43,6 +44,7 @@ export function DriverManagement({
   onCreateDriver,
   onEditDriver,
   onDeactivateDriver,
+  onShowCreateDriverModal,
 }: DriverManagementProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -65,7 +67,7 @@ export function DriverManagement({
           </p>
         </div>
         <Button
-          onClick={onCreateDriver}
+          onClick={onShowCreateDriverModal}
           className="bg-[#27AE60] hover:bg-[#229954] text-white"
         >
           <Plus className="w-4 h-4 mr-2" />

@@ -392,7 +392,8 @@ export default function App() {
                 drivers={drivers}
                 onCreateDriver={handleCreateDriver}
                 onEditDriver={handleEditDriver}
-                onDeactivateDriver={handleDeactivateDriver}/> 
+                onDeactivateDriver={handleDeactivateDriver}
+                onShowCreateDriverModal={() => setCreateDriverModal(true)}/>
             ) : currentPage === "returns" ? (
               <ReturnsPage />
             ) : currentPage === "settings" ? (
@@ -410,6 +411,7 @@ export default function App() {
           <CreateDriverModal
             isOpen={createDriverModal}
             onClose={() => setCreateDriverModal(false)}
+            
             onCreateDriver={handleCreateDriver}
           />
           <EditDriverModal
