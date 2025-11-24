@@ -203,7 +203,7 @@ export default function App() {
     // Map response into your Driver type
     const newDriver: Driver = {
       id: data.driver.id,
-      name: data.user.full_name,
+      name: data.user.name,
       email: data.user.email,
       phone: data.user.phone,
       vehicle: data.driver.vehicle_type,
@@ -389,11 +389,14 @@ export default function App() {
               <DeliveryManagement deliveries={deliveries} onViewDelivery={setSelectedDelivery} onAssignDriver={() => {}} onUpdateDelivery={() => {}} onMarkComplete={() => {}} />
             ) : currentPage === "drivers" ? (
               <DriverManagement
-                drivers={drivers}
-                onCreateDriver={handleCreateDriver}
-                onEditDriver={handleEditDriver}
-                onDeactivateDriver={handleDeactivateDriver}
-                onShowCreateDriverModal={() => setCreateDriverModal(true)}/>
+  drivers={drivers}
+  onCreateDriver={handleCreateDriver}
+  onEditDriver={handleEditDriver}
+  onDeactivateDriver={handleDeactivateDriver}
+  onShowCreateDriverModal={() => setCreateDriverModal(true)}
+  onShowEditDriverModal={(driver) => setEditDriverModal({ open: true, driver })}
+/>
+
             ) : currentPage === "returns" ? (
               <ReturnsPage />
             ) : currentPage === "settings" ? (
@@ -411,7 +414,6 @@ export default function App() {
           <CreateDriverModal
             isOpen={createDriverModal}
             onClose={() => setCreateDriverModal(false)}
-            
             onCreateDriver={handleCreateDriver}
           />
           <EditDriverModal
