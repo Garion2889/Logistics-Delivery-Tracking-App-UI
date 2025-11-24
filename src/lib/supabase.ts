@@ -214,6 +214,7 @@ export async function fetchAllDrivers() {
       status,
       is_active,
       users (
+        id,
         full_name,
         email,
         phone
@@ -224,11 +225,11 @@ export async function fetchAllDrivers() {
   if (error) throw error;
 
   return (data ?? []).map((d: any) => ({
-    id: d.id,
+    id: d.user_id, // use user_id as the driver id
     name: d.users?.full_name ?? "Unknown",
     email: d.users?.email ?? "",
     phone: d.users?.phone ?? "",
-    vehicle: d.vehicle_type,
+    vehicle: d.vehicle_type ?? "",
     status: d.status ?? "offline",
     activeDeliveries: 0,
   }));

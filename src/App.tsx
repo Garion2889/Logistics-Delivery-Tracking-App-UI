@@ -161,7 +161,7 @@ export default function App() {
   const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
 
   const handleCreateDriver = async (driverData: {
-    name: string;
+    full_name: string;
     email: string;
     password: string;
     phone: string;
@@ -179,7 +179,7 @@ export default function App() {
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
-        full_name: driverData.name,
+        full_name: driverData.full_name,
         email: driverData.email,
         password: driverData.password,
         phone: driverData.phone,
@@ -203,7 +203,7 @@ export default function App() {
     // Map response into your Driver type
     const newDriver: Driver = {
       id: data.driver.id,
-      name: data.user.name,
+      name: data.user.full_name,
       email: data.user.email,
       phone: data.user.phone,
       vehicle: data.driver.vehicle_type,
