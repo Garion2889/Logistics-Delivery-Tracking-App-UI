@@ -21,7 +21,7 @@ interface CreateDriverModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreateDriver: (driver: {
-    name: string;
+    full_name: string;
     email: string;
     password: string;
     phone: string;
@@ -43,17 +43,24 @@ export function CreateDriverModal({
   });
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onCreateDriver(formData);
-    setFormData({
-      name: "",
-      email: "",
-      password: "",
-      phone: "",
-      vehicle: "",
-    });
-    onClose();
-  };
+  e.preventDefault();
+  // Map 'name' to 'full_name' for Edge Function
+  onCreateDriver({
+    full_name: formData.name,
+    email: formData.email,
+    password: formData.password,
+    phone: formData.phone,
+    vehicle: formData.vehicle,
+  });
+  setFormData({
+    name: "",
+    email: "",
+    password: "",
+    phone: "",
+    vehicle: "",
+  });
+  onClose();
+};
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

@@ -212,7 +212,7 @@ export default function App() {
     };
 
     setDrivers((prev) => [newDriver, ...prev]);
-    toast.success(`Driver ${driverData.name} created successfully`);
+    toast.success(`Driver ${driverData.full_name} created successfully`);
   } catch (err: any) {
     console.error("handleCreateDriver exception:", err);
     toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
@@ -389,14 +389,11 @@ export default function App() {
               <DeliveryManagement deliveries={deliveries} onViewDelivery={setSelectedDelivery} onAssignDriver={() => {}} onUpdateDelivery={() => {}} onMarkComplete={() => {}} />
             ) : currentPage === "drivers" ? (
               <DriverManagement
-  drivers={drivers}
-  onCreateDriver={handleCreateDriver}
-  onEditDriver={handleEditDriver}
-  onDeactivateDriver={handleDeactivateDriver}
-  onShowCreateDriverModal={() => setCreateDriverModal(true)}
-  onShowEditDriverModal={(driver) => setEditDriverModal({ open: true, driver })}
-/>
-
+                drivers={drivers}
+                onCreateDriver={handleCreateDriver}
+                onEditDriver={handleEditDriver}
+                onDeactivateDriver={handleDeactivateDriver}
+                onShowCreateDriverModal={() => setCreateDriverModal(true)}/>
             ) : currentPage === "returns" ? (
               <ReturnsPage />
             ) : currentPage === "settings" ? (
@@ -414,6 +411,7 @@ export default function App() {
           <CreateDriverModal
             isOpen={createDriverModal}
             onClose={() => setCreateDriverModal(false)}
+            
             onCreateDriver={handleCreateDriver}
           />
           <EditDriverModal
