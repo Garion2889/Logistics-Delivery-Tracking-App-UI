@@ -25,26 +25,20 @@ interface Driver {
 
 interface DriverManagementProps {
   drivers: Driver[];
-  onCreateDriver: (driverData: {
-    name: string;
-    email: string;
-    password: string;
-    phone: string;
-    vehicle: string;
-  }) => void | Promise<void>;
   onEditDriver: (driver: Driver, updatedFields: any) => Promise<void>;
   onDeactivateDriver: (driver: Driver) => void;
   onShowCreateDriverModal: () => void; 
+  onShowEditDriverModal: (driver: Driver) => void;
 }
 
 
 
 export function DriverManagement({
   drivers,
-  onCreateDriver,
   onEditDriver,
   onDeactivateDriver,
   onShowCreateDriverModal,
+  onShowEditDriverModal
 }: DriverManagementProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -157,7 +151,7 @@ export function DriverManagement({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => onEditDriver(driver)}
+                        onClick={() => onShowEditDriverModal(driver)}
                       >
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -229,7 +223,7 @@ export function DriverManagement({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onEditDriver(driver)}
+                  onClick={() => onShowEditDriverModal(driver)}
                   className="flex-1"
                 >
                   <Edit className="w-4 h-4 mr-2" />

@@ -220,20 +220,40 @@ export default function App() {
   };
 
 
-  const handleEditDriver = async (
-    driver: Driver,
-    updatedFields: any
-  ): Promise<void> => {
-    // For now, just forward to handleUpdateDriver
-    handleUpdateDriver(driver.id, updatedFields);
-  };
+ const handleEditDriver = async (
+  driver: Driver,
+  updatedFields: Partial<Driver>
+): Promise<void> => {
+  try {
+    // --- Optional: Call your API / Edge Function to update driver in DB ---
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-driver`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ id: driver.id, ...updatedFields }),
+    });
 
-  const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
-  setDrivers(prev =>
-    prev.map(d => (d.id === driverId ? { ...d, ...updates } : d))  // fixed spread
-  );
-  toast.success("Driver updated successfully");
-  };
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || data?.error) {
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+
+    // --- Update local state ---
+    setDrivers(prev =>
+      prev.map(d => (d.id === driver.id ? { ...d, ...updatedFields } : d))
+    );
+
+    toast.success(`Driver ${driver.name} updated successfully`);
+  } catch (err: any) {
+    console.error("handleEditDriver error:", err);
+    toast.error(`Failed to update driver: ${err.message ?? "Unknown error"}`);
+  }
+};
+
 
 
   const handleDeactivateDriver = async (driver: Driver) => {
@@ -393,7 +413,8 @@ export default function App() {
                 onCreateDriver={handleCreateDriver}
                 onEditDriver={handleEditDriver}
                 onDeactivateDriver={handleDeactivateDriver}
-                onShowCreateDriverModal={() => setCreateDriverModal(true)}/>
+                onShowCreateDriverModal={() => setCreateDriverModal(true)}
+                onShowEditDriverModal={(driver) => setEditDriverModal({ open: true, driver })}/>
             ) : currentPage === "returns" ? (
               <ReturnsPage />
             ) : currentPage === "settings" ? (
@@ -411,14 +432,13 @@ export default function App() {
           <CreateDriverModal
             isOpen={createDriverModal}
             onClose={() => setCreateDriverModal(false)}
-            
             onCreateDriver={handleCreateDriver}
           />
           <EditDriverModal
             isOpen={editDriverModal.open}
             onClose={() => setEditDriverModal({ open: false, driver: null })}
             driver={editDriverModal.driver}
-            onUpdate={handleUpdateDriver}
+            onUpdate={handleEditDriver}
           />
         </>
       );
