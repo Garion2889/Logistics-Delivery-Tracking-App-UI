@@ -237,3 +237,222 @@ export async function fetchAllDrivers() {
     activeDeliveries: 0,
   }));
 }
+
+// Order management helper functions
+// ============================================
+// CREATE ORDER WITH ITEMS
+// ============================================
+export async function createOrderWithItems(orderData: {
+  ref_no: string;
+  customer_name: string;
+  address: string;
+  customer_phone?: string;
+  customer_email?: string;
+  latitude?: number;
+  longitude?: number;
+  total_amount?: number;
+  delivery_fee?: number;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  notes?: string;
+  items?: Array<{
+    product_name: string;
+    sku?: string;
+    quantity: number;
+    unit_price: number;
+    weight_kg?: number;
+    dimensions?: string;
+    notes?: string;
+  }>;
+}) {
+  const { data, error } = await supabase.rpc('create_order_with_items', {
+    p_ref_no: orderData.ref_no,
+    p_customer_name: orderData.customer_name,
+    p_address: orderData.address,
+    p_customer_phone: orderData.customer_phone || null,
+    p_customer_email: orderData.customer_email || null,
+    p_latitude: orderData.latitude || null,
+    p_longitude: orderData.longitude || null,
+    p_total_amount: orderData.total_amount || null,
+    p_delivery_fee: orderData.delivery_fee || 0,
+    p_priority: orderData.priority || 'normal',
+    p_notes: orderData.notes || null,
+    p_items: orderData.items ?? [],
+  });
+
+  if (error) throw error;
+  return data; // Returns delivery_id (UUID)
+}
+
+// ============================================
+// UPDATE ORDER STATUS
+// ============================================
+export async function updateOrderStatus(
+  deliveryId: string,
+  newStatus: 'created' | 'assigned' | 'picked_up' | 'in_transit' | 'delivered' | 'returned' | 'cancelled',
+  notes?: string,
+  latitude?: number,
+  longitude?: number
+) {
+  const { data, error } = await supabase.rpc('update_order_status', {
+    p_delivery_id: deliveryId,
+    p_new_status: newStatus,
+    p_notes: notes || null,
+    p_latitude: latitude || null,
+    p_longitude: longitude || null,
+  });
+
+  if (error) throw error;
+  return data; // Returns true
+}
+
+// ============================================
+// VALIDATE ORDER
+// ============================================
+export async function validateOrder(deliveryId: string) {
+  const { data, error } = await supabase.rpc('validate_order', {
+    p_delivery_id: deliveryId,
+  });
+
+  if (error) throw error;
+  return data; // Returns { is_valid: boolean, errors: string[] }
+}
+
+// ============================================
+// GET ORDER PROCESSING STATUS
+// ============================================
+export async function getOrderProcessingStatus(deliveryId: string) {
+  const { data, error } = await supabase.rpc('get_order_processing_status', {
+    p_delivery_id: deliveryId,
+  });
+
+  if (error) throw error;
+  return data; // Returns processing status and milestones
+}
+
+// ============================================
+// COMPLETE MILESTONE
+// ============================================
+export async function completeMilestone(
+  deliveryId: string,
+  milestoneType: string,
+  notes?: string
+) {
+  const { data, error } = await supabase.rpc('complete_milestone', {
+    p_delivery_id: deliveryId,
+    p_milestone_type: milestoneType,
+    p_notes: notes || null,
+  });
+
+  if (error) throw error;
+  return data; // Returns true
+}
+
+// ============================================
+// GET ORDER ITEMS
+// ============================================
+export async function getOrderItems(deliveryId: string) {
+  const { data, error } = await supabase
+    .from('order_items')
+    .select('*')
+    .eq('delivery_id', deliveryId)
+    .order('created_at');
+
+  if (error) throw error;
+  return data;
+}
+
+// ============================================
+// GET ORDER MILESTONES
+// ============================================
+export async function getOrderMilestones(deliveryId: string) {
+  const { data, error } = await supabase
+    .from('order_milestones')
+    .select('*')
+    .eq('delivery_id', deliveryId)
+    .order('created_at');
+
+  if (error) throw error;
+  return data;
+}
+
+// ============================================
+// SUBSCRIBE TO ORDER UPDATES (REAL-TIME)
+// ============================================
+export function subscribeToOrderUpdates(
+  deliveryId: string,
+  callback: (payload: any) => void
+) {
+  const channel = supabase
+    .channel(`order-${deliveryId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'deliveries',
+        filter: `id=eq.${deliveryId}`,
+      },
+      (payload) => {
+        callback(payload);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}
+
+// ============================================
+// SUBSCRIBE TO MILESTONE UPDATES (REAL-TIME)
+// ============================================
+export function subscribeToMilestoneUpdates(
+  deliveryId: string,
+  callback: (payload: any) => void
+) {
+  const channel = supabase
+    .channel(`milestones-${deliveryId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'order_milestones',
+        filter: `delivery_id=eq.${deliveryId}`,
+      },
+      (payload) => {
+        callback(payload);
+      }
+    )
+    .subscribe();
+
+  return channel;
+}
+
+// ============================================
+// GET COMPLETE ORDER WITH DETAILS
+// ============================================
+export async function getOrderWithDetails(deliveryId: string) {
+  // Fetch delivery
+  const { data: delivery, error: deliveryError } = await supabase
+    .from('deliveries')
+    .select('*')
+    .eq('id', deliveryId)
+    .single();
+
+  if (deliveryError) throw deliveryError;
+
+  // Fetch items
+  const items = await getOrderItems(deliveryId);
+
+  // Fetch milestones
+  const milestones = await getOrderMilestones(deliveryId);
+
+  // Fetch processing status
+  const processingStatus = await getOrderProcessingStatus(deliveryId);
+
+  return {
+    delivery,
+    items,
+    milestones,
+    processingStatus,
+  };
+}

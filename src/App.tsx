@@ -16,10 +16,8 @@ import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
 import { toast } from "sonner";
-import { trackDelivery } from "./lib/supabase";
+import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
 import 'leaflet/dist/leaflet.css';
-import { fetchAllDrivers } from "./lib/supabase";
-import { supabase } from "./lib/supabase";
 
 import "./styles/globals.css";
 
@@ -64,40 +62,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<"admin" | "driver" | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   
-  const [deliveries, setDeliveries] = useState<Delivery[]>([
-    {
-      id: "1",
-      refNo: "REF-001",
-      customer: "John Doe",
-      address: "123 Main St, Manila",
-      status: "delivered",
-      driver: "Driver 1",
-      createdAt: "2023-10-01 10:00 AM",
-      phone: "09123456789",
-      amount: 500,
-    },
-    {
-      id: "2",
-      refNo: "REF-002",
-      customer: "Jane Smith",
-      address: "456 Elm St, Quezon City",
-      status: "in-transit",
-      driver: "Driver 2",
-      createdAt: "2023-10-02 11:00 AM",
-      phone: "09876543210",
-      amount: 750,
-    },
-    {
-      id: "3",
-      refNo: "REF-003",
-      customer: "Bob Johnson",
-      address: "789 Oak St, Makati",
-      status: "pending",
-      createdAt: "2023-10-03 12:00 PM",
-      phone: "09112233445",
-      amount: 300,
-    },
-  ]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
@@ -153,9 +118,15 @@ export default function App() {
     toast.info("Logged out successfully");
   };
 
-  const handleUpdateDeliveryStatus = (deliveryId: string, status: Delivery["status"]) => {
-    setDeliveries(prev => prev.map(d => d.id === deliveryId ? { ...d, status } : d));
-    toast.success("Delivery status updated");
+  const handleUpdateDeliveryStatus = async (deliveryId: string, status: Delivery["status"]) => {
+    try {
+      const dbStatus = mapStatusToDB(status);
+      await updateOrderStatusRpc(deliveryId, dbStatus);
+      await fetchDeliveries();
+      toast.success("Delivery status updated");
+    } catch (error: any) {
+      toast.error(`Failed to update status: ${error.message}`);
+    }
   };
 
   const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
@@ -344,6 +315,56 @@ export default function App() {
       .catch(console.error);
   }
 }, [userRole]);
+
+  const fetchDeliveries = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select(`
+          *,
+          driver_info:drivers!assigned_driver(
+            id,
+            user_info:users!user_id(full_name)
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const transformed = (data || []).map((d: any) => ({
+        id: d.id,
+        refNo: d.ref_no,
+        customer: d.customer_name,
+        address: d.address,
+        status: mapStatus(d.status),
+        driver: d.driver_info?.user_info?.full_name,
+        createdAt: new Date(d.created_at).toLocaleString(),
+        phone: d.customer_phone,
+        amount: d.total_amount,
+      }));
+
+      setDeliveries(transformed);
+    } catch (error: any) {
+      toast.error(`Failed to fetch deliveries: ${error.message}`);
+    }
+  };
+
+  const mapStatusToDB = (uiStatus: Delivery['status']): string => {
+    const mapping: Record<Delivery['status'], string> = {
+      'pending': 'created',
+      'assigned': 'dispatched',
+      'in-transit': 'in_transit',
+      'delivered': 'delivered',
+      'returned': 'returned',
+    };
+    return mapping[uiStatus] || 'created';
+  };
+
+  useEffect(() => {
+    if (currentView === "admin" || currentView === "driver") {
+      fetchDeliveries();
+    }
+  }, [currentView]);
 
   // ---------- Stats ----------
 

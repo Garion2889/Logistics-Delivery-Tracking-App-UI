@@ -23,6 +23,7 @@ import {
   uploadPODImage,
   subscribeToDeliveries,
   updateDriverStatus,
+  updateOrderStatus as updateOrderStatusRpc,
 } from "./lib/supabase";
 import type { Database } from "./types/database.types";
 import "./styles/globals.css";
@@ -311,6 +312,8 @@ export default function AppWithSupabase() {
 
       if (error) throw error;
 
+      await updateOrderStatusRpc(assignDriverModal.delivery.id, 'assigned', `Assigned to driver`);
+
       const driver = drivers.find((d) => d.id === driverId);
       toast.success(`Driver ${driver?.name} assigned successfully`);
       fetchDeliveries();
@@ -351,12 +354,8 @@ export default function AppWithSupabase() {
     status: Delivery["status"]
   ) => {
     try {
-      const { error } = await supabase
-        .from('deliveries')
-        .update({ status: mapStatusToDB(status) })
-        .eq('id', deliveryId);
-
-      if (error) throw error;
+      const dbStatus = mapStatusToDB(status);
+      await updateOrderStatusRpc(deliveryId, dbStatus);
 
       toast.success("Delivery status updated");
       fetchDeliveries();
