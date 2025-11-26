@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase"; // adjust path to your supabase client
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,8 @@ import {
 } from "./ui/select";
 
 interface Driver {
-  id: string;
+  id: string;       // drivers.id
+  user_id: string;  // optional
   name: string;
   email: string;
   phone: string;
@@ -31,7 +33,8 @@ interface EditDriverModalProps {
   isOpen: boolean;
   onClose: () => void;
   driver: Driver | null;
-  onUpdate: (driverId: string, updates: Partial<Driver>) => void;
+  onUpdate: (driverId: string, userId: string, updates: Partial<Driver>) => void;
+  currentUserId: string; // your logged-in admin UUID
 }
 
 export function EditDriverModal({
@@ -39,6 +42,7 @@ export function EditDriverModal({
   onClose,
   driver,
   onUpdate,
+  currentUserId
 }: EditDriverModalProps) {
   const [formData, setFormData] = useState({
     name: "",
@@ -46,25 +50,64 @@ export function EditDriverModal({
     phone: "",
     vehicle: "",
   });
+  const [userId, setUserId] = useState<string>("");
 
+  // Load initial form data
   useEffect(() => {
-    if (driver) {
-      setFormData({
-        name: driver.name,
-        email: driver.email,
-        phone: driver.phone,
-        vehicle: driver.vehicle,
-      });
+    if (!driver) return;
+
+    setFormData({
+      name: driver.name,
+      email: driver.email,
+      phone: driver.phone,
+      vehicle: driver.vehicle,
+    });
+
+    if (!driver.user_id) {
+      (async () => {
+        const { data, error } = await supabase
+          .from("drivers")
+          .select("user_id")
+          .eq("id", driver.id)
+          .single();
+        if (error) console.error("Failed to fetch user_id:", error);
+        else setUserId(data.user_id);
+      })();
+    } else {
+      setUserId(driver.user_id);
     }
   }, [driver]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!driver) return;
+    if (!driver || !userId) return;
 
-    onUpdate(driver.id, formData);
+    // Prepare updates for RPC
+    const updates = {
+      p_caller: userId,          // your admin UUID
+      p_driver_id: driver.id,
+      p_email: formData.email || null,
+      p_full_name: formData.name || null,
+      p_phone: formData.phone || null,
+      p_vehicle: formData.vehicle ? { type: formData.vehicle } : null, // JSON
+    };
+
+    const { data, error } = await supabase.rpc("update_driver_profile", updates);
+
+    if (error) {
+      console.error("Failed to update driver profile:", error);
+      alert("Error updating driver profile: " + error.message);
+      return;
+    }
+
+    console.log("Driver updated successfully:", data);
+
+    // Notify parent component
+    onUpdate(driver.id, userId, formData);
+
     onClose();
   };
+
 
   if (!driver) return null;
 

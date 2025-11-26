@@ -35,7 +35,6 @@ interface DriverManagementProps {
 
 export function DriverManagement({
   drivers,
-  onEditDriver,
   onDeactivateDriver,
   onShowCreateDriverModal,
   onShowEditDriverModal
@@ -232,7 +231,7 @@ export function DriverManagement({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onDeactivateDriver(driver)}
+                  onClick={() => onDeactivateDriver(driver.id)}
                   className="flex-1 text-red-600"
                 >
                   <UserX className="w-4 h-4 mr-2" />

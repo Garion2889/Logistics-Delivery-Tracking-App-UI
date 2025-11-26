@@ -15,6 +15,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
+
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
 import 'leaflet/dist/leaflet.css';
@@ -89,17 +90,30 @@ export default function App() {
 
   // ---------- Handlers ----------
 
-  const handleLogin = (token: string, role: "admin" | "driver", id: string) => {
-    setUserId(id);
-    setUserRole(role);
-    setCurrentView(role);
+  const handleLogin = async (token: string, role: "admin" | "driver", id: string) => {
+  setUserId(id);
+  setUserRole(role);
+  setCurrentView(role);
 
-    // Persist session
-    localStorage.setItem("userId", id);
-    localStorage.setItem("userRole", role);
+  // Persist session info
+  localStorage.setItem("userId", id);
+  localStorage.setItem("userRole", role);
 
-    toast.success(`Welcome back! Logged in as ${role}`);
-  };
+  // Get current session from Supabase
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+
+
+  if (!accessToken) {
+    toast.error("Login failed: no active session token");
+    return;
+  }
+
+  localStorage.setItem("supabaseAccessToken", accessToken);
+
+  toast.success(`Welcome back! Logged in as ${role}`);
+};
+
 
   const handleLogout = () => {
     setCurrentView("login");
@@ -191,59 +205,73 @@ export default function App() {
   };
 
 
- const handleEditDriver = async (
-  driver: Driver,
-  updatedFields: Partial<Driver>
-): Promise<void> => {
+
+// App.tsx or wherever onUpdate lives
+const handleUpdateDriver = async (
+  driverId: string,
+  userId: string,
+  updates: Partial<Driver>
+) => {
   try {
-    // --- Optional: Call your API / Edge Function to update driver in DB ---
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-driver`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ id: driver.id, ...updatedFields }),
-    });
-
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok || data?.error) {
-      throw new Error(data?.error || `HTTP ${res.status}`);
+    // Prepare vehicle JSON if needed
+    let vehicleJson: Record<string, string> | null = null;
+    if (updates.vehicle) {
+      vehicleJson = { type: updates.vehicle }; // adjust if more vehicle info exists
     }
 
-    // --- Update local state ---
-    setDrivers(prev =>
-      prev.map(d => (d.id === driver.id ? { ...d, ...updatedFields } : d))
+    const { data, error } = await supabase.rpc("update_driver_profile", {
+      p_caller: userId,          // admin UUID or driver themselves
+      p_driver_id: driverId,
+      p_full_name: updates.name ?? null,
+      p_email: updates.email ?? null,
+      p_phone: updates.phone ?? null,
+      p_vehicle: vehicleJson,
+    });
+
+    if (error) throw error;
+
+    console.log("Driver updated successfully:", data);
+
+    // Optionally update local state
+    setDrivers((prev) =>
+      prev.map((d) =>
+        d.id === driverId
+          ? { ...d, ...updates, vehicle: updates.vehicle ?? d.vehicle }
+          : d
+      )
     );
 
-    toast.success(`Driver ${driver.name} updated successfully`);
+    toast.success("Driver profile updated successfully");
   } catch (err: any) {
-    console.error("handleEditDriver error:", err);
-    toast.error(`Failed to update driver: ${err.message ?? "Unknown error"}`);
+    console.error("Failed to update driver profile:", err);
+    toast.error(`Update failed: ${err.message}`);
   }
 };
 
 
-
-  const handleDeactivateDriver = async (driver: Driver) => {
+const handleDeactivateDriver = async (driverId: string) => {
   try {
-    const { error } = await supabase
-      .from("drivers")
-      .update({ is_active: false, status: "offline" })
-      .eq("id", driver.id);
+    const { error } = await supabase.rpc("deactivate_driver_account", {
+      p_caller: userId, // admin UUID
+      p_driver_id: driverId,
+    });
 
     if (error) throw error;
 
-    // refresh
-    setDrivers(await fetchAllDrivers());
+    // Update local state so UI reflects the change immediately
+    setDrivers((prev) =>
+      prev.map((d) =>
+        d.id === driverId ? { ...d, status: "deactivated" } : d
+      )
+    );
 
-    toast.warning(`Driver ${driver.name} deactivated`);
+    toast.success("Driver account deactivated");
   } catch (err: any) {
-    toast.error(err.message);
+    console.error("Deactivate driver error:", err);
+    toast.error(`Failed to deactivate driver: ${err.message}`);
   }
-  };
+};
+
 
 
   const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
@@ -431,8 +459,7 @@ export default function App() {
             ) : currentPage === "drivers" ? (
               <DriverManagement
                 drivers={drivers}
-                onCreateDriver={handleCreateDriver}
-                onEditDriver={handleEditDriver}
+                onEditDriver={handleUpdateDriver}
                 onDeactivateDriver={handleDeactivateDriver}
                 onShowCreateDriverModal={() => setCreateDriverModal(true)}
                 onShowEditDriverModal={(driver) => setEditDriverModal({ open: true, driver })}/>
@@ -459,7 +486,7 @@ export default function App() {
             isOpen={editDriverModal.open}
             onClose={() => setEditDriverModal({ open: false, driver: null })}
             driver={editDriverModal.driver}
-            onUpdate={handleEditDriver}
+            onUpdate={handleUpdateDriver}
           />
         </>
       );
