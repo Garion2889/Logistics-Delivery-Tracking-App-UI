@@ -1,17 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
   Calendar as CalendarIcon,
-  MapPin,
   Navigation,
   Users,
   TrendingUp,
@@ -19,7 +18,6 @@ import {
   Route,
   Zap,
   CheckCircle2,
-  XCircle,
   Activity,
   Truck,
   Package,
@@ -42,16 +40,17 @@ import {
   TableRow,
 } from "./ui/table";
 import { Calendar } from "./ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { cn } from "./ui/utils";
+
+// ------------------ Types ------------------
 
 interface Driver {
-id: string;
-name: string;
-vehicle: string;
-status: "online" | "in-transit" | "idle" | "offline";
-location?: { lat: number; lng: number };
-currentRoute?: string;
+  id: string;
+  name: string;
+  vehicle: string;
+  status: "online" | "in-transit" | "idle" | "offline";
+  location?: { lat: number; lng: number };
+  currentRoute?: string;
+  lastUpdate?: string;
 }
 
 interface OptimizedRoute {
@@ -72,58 +71,18 @@ interface ScheduledDelivery {
   deliveries: number;
   status: "scheduled" | "in-progress" | "completed";
 }
-const driverIcon = new L.Icon({
-iconUrl: "/marker-icon.png", // or any custom marker
-iconSize: [25, 41],
-iconAnchor: [12, 41],
-});
-const mockDrivers: Driver[] = [
-  {
-    id: "1",
-    name: "Pedro Reyes",
-    vehicle: "Motorcycle",
-    status: "in-transit",
-    currentRoute: "Route A - North Metro",
-    deliveriesPerDay: 24,
-    successRate: 96,
-    distanceTraveled: 145.3,
-    availableHours: "8:00 AM - 6:00 PM",
-    rating: 4.8,
-  },
-  {
-    id: "2",
-    name: "Carlos Mendoza",
-    vehicle: "Van",
-    status: "online",
-    deliveriesPerDay: 18,
-    successRate: 94,
-    distanceTraveled: 178.2,
-    availableHours: "9:00 AM - 7:00 PM",
-    rating: 4.6,
-  },
-  {
-    id: "3",
-    name: "Luis Ramos",
-    vehicle: "Truck",
-    status: "idle",
-    deliveriesPerDay: 12,
-    successRate: 98,
-    distanceTraveled: 132.8,
-    availableHours: "7:00 AM - 5:00 PM",
-    rating: 4.9,
-  },
-  {
-    id: "4",
-    name: "Miguel Santos",
-    vehicle: "Motorcycle",
-    status: "online",
-    deliveriesPerDay: 22,
-    successRate: 92,
-    distanceTraveled: 156.4,
-    availableHours: "8:00 AM - 6:00 PM",
-    rating: 4.5,
-  },
-];
+
+type PerfRow = {
+  driver_id: string;
+  name: string | null;
+  vehicle_type: string | null;
+  deliveries_per_day: number;
+  success_rate: number;
+  distance_traveled_km: number;
+  avg_rating: number | null;
+};
+
+// ------------------ Mock data (OK to keep for now) ------------------
 
 const mockOptimizedRoutes: OptimizedRoute[] = [
   {
@@ -197,92 +156,143 @@ const mockScheduledDeliveries: ScheduledDelivery[] = [
   },
 ];
 
+// ------------------ Component ------------------
 
-  // Fetch real drivers from Supabase
 export function RouteOptimizationPage() {
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
-const [drivers, setDrivers] = useState<Driver[]>([]);
 
-  // Fetch real drivers from Supabase
+  // real drivers for availability/map
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+
+  // performance tab data
+  const [performanceRows, setPerformanceRows] = useState<PerfRow[]>([]);
+  const [loadingPerf, setLoadingPerf] = useState(false);
+
+  // ------------------ Fetch drivers ------------------
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select(
+          "user_id, name, vehicle_type, status, last_lat, last_lng, last_location_update"
+        );
+
+      if (error) {
+        console.error("Error fetching drivers:", error);
+        return;
+      }
+
+      const formatted: Driver[] =
+        data?.map((d: any) => ({
+          id: d.user_id,
+          name: d.name || "Unnamed",
+          vehicle: d.vehicle_type || "",
+          status: d.status as Driver["status"],
+          location:
+            d.last_lat != null && d.last_lng != null
+              ? { lat: d.last_lat, lng: d.last_lng }
+              : undefined,
+          currentRoute: "",
+          lastUpdate: d.last_location_update
+            ? new Date(d.last_location_update).toLocaleTimeString()
+            : "Just now",
+        })) ?? [];
+
+      setDrivers(formatted);
+    };
+
+    fetchDrivers();
+
+    const sub = supabase
+      .channel("public:drivers")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "drivers" },
+        (payload) => {
+          const u = payload.new as any;
+          setDrivers((prev) =>
+            prev.map((d) =>
+              d.id === u.user_id
+                ? {
+                    ...d,
+                    status: u.status,
+                    vehicle: u.vehicle_type,
+                    location:
+                      u.last_lat != null && u.last_lng != null
+                        ? { lat: u.last_lat, lng: u.last_lng }
+                        : d.location,
+                    lastUpdate: u.last_location_update
+                      ? new Date(u.last_location_update).toLocaleTimeString()
+                      : "Just now",
+                  }
+                : d
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sub);
+    };
+  }, []);
+
+  // ------------------ Fetch performance rows ------------------
 useEffect(() => {
-  const fetchDrivers = async () => {
-    const { data, error } = await supabase
-      .from('drivers')
-      .select('user_id, name, vehicle_type, status, last_lat, last_lng, last_location_update');
+  const loadPerformance = async () => {
+    setLoadingPerf(true);
 
+    const { data, error } = await supabase.functions.invoke(
+      "get-driver-performance",
+      {
+        method: "POST",
+        body: {
+          from: "2025-11-01",
+          to: "2025-11-30",
+        },
+      }
+    );
+
+    console.log("performance raw data:", data);
+    console.log("performance error:", error);
 
     if (error) {
-      console.error('Error fetching drivers:', error);
-      return;
+      setPerformanceRows([]);
+    } else {
+      setPerformanceRows((data as PerfRow[]) || []);
     }
 
-    if (data) {
-      const formattedDrivers: Driver[] = data.map(d => ({
-        id: d.user_id,
-        name: d.name || '',
-        email: (d as any).email || '',
-        phone: (d as any).phone || '',
-        vehicle: d.vehicle_type,
-        status: d.status as Driver['status'],
-        activeDeliveries: (d as any).active_deliveries || 0,
-        location: {
-          lat: d.last_lat || 14.5547,
-          lng: d.last_lng || 121.0244,
-        },
-        completedStops: 0,
-        totalStops: 0,
-        distance: 0,
-        eta: 'N/A',
-        speed: 0,
-        lastUpdate: d.last_location_update
-          ? new Date(d.last_location_update).toLocaleTimeString()
-          : 'Just now',
-        currentRoute: '',
-        rating: 4.5,
-        deliveriesPerDay: 20,
-        successRate: 95,
-        distanceTraveled: 150,
-        availableHours: '8:00 AM - 6:00 PM',
-      }));
-
-      setDrivers(formattedDrivers);
-    }
+    setLoadingPerf(false);
   };
 
-  fetchDrivers(); // call the async function inside useEffect
-
-
-  // Realtime subscription for driver location updates
-  const subscription = supabase
-    .channel('public:drivers')
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'drivers' },
-      (payload) => {
-        const updatedDriver = payload.new as any;
-        setDrivers(prev =>
-          prev.map(d =>
-            d.id === updatedDriver.id
-              ? {
-                  ...d,
-                  location: { lat: updatedDriver.last_lat, lng: updatedDriver.last_lng },
-                  lastUpdate: updatedDriver.last_location_update
-                    ? new Date(updatedDriver.last_location_update).toLocaleTimeString()
-                    : 'Just now',
-                }
-              : d
-          )
-        );
-      }
-    )
-    .subscribe();
-
-  return () => supabase.removeChannel(subscription);
+  loadPerformance();
 }, []);
 
+
+  // ------------------ Derived KPI values ------------------
+  const activeDriversCount = useMemo(
+    () => drivers.filter((d) => d.status !== "offline").length,
+    [drivers]
+  );
+
+  const avgSuccessRate = useMemo(() => {
+    if (performanceRows.length === 0) return null;
+    const sum = performanceRows.reduce((s, r) => s + (r.success_rate || 0), 0);
+    return sum / performanceRows.length;
+  }, [performanceRows]);
+
+  const totalDistance = useMemo(() => {
+    if (performanceRows.length === 0) return null;
+    return performanceRows.reduce(
+      (s, r) => s + Number(r.distance_traveled_km || 0),
+      0
+    );
+  }, [performanceRows]);
+
+  // ------------------ Helpers ------------------
 
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
@@ -327,6 +337,8 @@ useEffect(() => {
     }
   };
 
+  // ------------------ Render ------------------
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -355,11 +367,11 @@ useEffect(() => {
                 <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
                   Total Drivers
                 </p>
-          <h3 className="text-[#222B2D] dark:text-white mt-1">
-            {drivers.length}
-          </h3>
+                <h3 className="text-[#222B2D] dark:text-white mt-1">
+                  {drivers.length}
+                </h3>
                 <p className="text-xs text-[#27AE60] mt-1">
-                  {mockDrivers.filter((d) => d.status !== "offline").length} active
+                  {activeDriversCount} active
                 </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-[#27AE60]/10 flex items-center justify-center">
@@ -380,8 +392,7 @@ useEffect(() => {
                   {mockOptimizedRoutes.filter((r) => r.status === "active").length}
                 </h3>
                 <p className="text-xs text-blue-600 mt-1">
-                  {mockOptimizedRoutes.filter((r) => r.status === "planned").length}{" "}
-                  planned
+                  {mockOptimizedRoutes.filter((r) => r.status === "planned").length} planned
                 </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -398,16 +409,12 @@ useEffect(() => {
                 <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
                   Avg Success Rate
                 </p>
-          <h3 className="text-[#222B2D] dark:text-white mt-1">
-            {(
-              drivers.reduce((sum, d) => sum + d.successRate, 0) /
-              drivers.length
-            ).toFixed(1)}
-            %
-          </h3>
+                <h3 className="text-[#222B2D] dark:text-white mt-1">
+                  {avgSuccessRate == null ? "—" : avgSuccessRate.toFixed(1)}%
+                </h3>
                 <p className="text-xs text-[#27AE60] mt-1 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" />
-                  +2.3% this week
+                  Based on selected range
                 </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
@@ -425,13 +432,10 @@ useEffect(() => {
                   Total Distance
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {mockDrivers
-                    .reduce((sum, d) => sum + d.distanceTraveled, 0)
-                    .toFixed(1)}{" "}
-                  km
+                  {totalDistance == null ? "—" : totalDistance.toFixed(1)} km
                 </h3>
                 <p className="text-xs text-[#222B2D]/60 dark:text-white/60 mt-1">
-                  Today
+                  Range Selected
                 </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
@@ -451,24 +455,22 @@ useEffect(() => {
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
         </TabsList>
 
-        {/* Driver Availability */}
+        {/* Availability */}
         <TabsContent value="availability">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Driver Availability</span>
-                <div className="flex items-center gap-2">
-                  <Select defaultValue="all">
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Drivers</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="offline">Offline</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select defaultValue="all">
+                  <SelectTrigger className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Drivers</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                  </SelectContent>
+                </Select>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -479,8 +481,7 @@ useEffect(() => {
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Current Route</TableHead>
-                    <TableHead>Available Hours</TableHead>
-                    <TableHead>Rating</TableHead>
+                    <TableHead>Last Update</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -494,46 +495,24 @@ useEffect(() => {
                               {driver.name.charAt(0)}
                             </span>
                           </div>
-                          <div>
-                            <p className="text-[#222B2D] dark:text-white">
-                              {driver.name}
-                            </p>
-                          </div>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {driver.name}
+                          </p>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Truck className="w-4 h-4 text-[#222B2D]/60 dark:text-white/60" />
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.vehicle}
-                          </span>
-                        </div>
+                      <TableCell className="text-[#222B2D] dark:text-white">
+                        {driver.vehicle}
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(driver.status)}>
                           {driver.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <span className="text-[#222B2D]/60 dark:text-white/60">
-                          {driver.currentRoute || "No route assigned"}
-                        </span>
+                      <TableCell className="text-[#222B2D]/60 dark:text-white/60">
+                        {driver.currentRoute || "No route assigned"}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-[#222B2D]/60 dark:text-white/60" />
-                          <span className="text-[#222B2D] dark:text-white text-sm">
-                            {driver.availableHours}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.rating}
-                          </span>
-                          <span className="text-yellow-500">★</span>
-                        </div>
+                      <TableCell className="text-[#222B2D]/60 dark:text-white/60">
+                        {driver.lastUpdate}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -546,16 +525,22 @@ useEffect(() => {
                       </TableCell>
                     </TableRow>
                   ))}
+                  {drivers.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center">
+                        No drivers yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Optimized Routes */}
+        {/* Routes */}
         <TabsContent value="routes">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Route List */}
             <div className="lg:col-span-2 space-y-4">
               <Card>
                 <CardHeader>
@@ -595,38 +580,22 @@ useEffect(() => {
                           <Badge className={getRouteStatusColor(route.status)}>
                             {route.status}
                           </Badge>
-                          <AlertCircle
-                            className={`w-4 h-4 ${getPriorityColor(
-                              route.priority
-                            )}`}
-                          />
+                          <AlertCircle className={`w-4 h-4 ${getPriorityColor(route.priority)}`} />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">
-                            Stops
-                          </p>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {route.stops}
-                          </p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">Stops</p>
+                          <p className="text-[#222B2D] dark:text-white">{route.stops}</p>
                         </div>
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">
-                            Distance
-                          </p>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {route.distance} km
-                          </p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">Distance</p>
+                          <p className="text-[#222B2D] dark:text-white">{route.distance} km</p>
                         </div>
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">
-                            Est. Time
-                          </p>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {route.estimatedTime}
-                          </p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">Est. Time</p>
+                          <p className="text-[#222B2D] dark:text-white">{route.estimatedTime}</p>
                         </div>
                       </div>
 
@@ -641,7 +610,6 @@ useEffect(() => {
               </Card>
             </div>
 
-            {/* Route Preview */}
             <div className="lg:col-span-1">
               <Card className="sticky top-6">
                 <CardHeader>
@@ -650,96 +618,77 @@ useEffect(() => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-  {selectedRoute ? (
-    <div className="space-y-4">
-      {/* Map Preview */}
-      <div className="h-64 rounded-lg overflow-hidden">
-        <MapContainer
-          center={[14.5547, 121.0244]} // Default center (can use first stop)
-          zoom={12}
-          className="h-full w-full"
-          scrollWheelZoom={false}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          />
+                  {selectedRoute ? (
+                    <div className="space-y-4">
+                      <div className="h-64 rounded-lg overflow-hidden">
+                        <MapContainer
+                          center={[14.5547, 121.0244]}
+                          zoom={12}
+                          className="h-full w-full"
+                          scrollWheelZoom={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            attribution="&copy; OpenStreetMap contributors"
+                          />
 
-          {/* Driver Markers */}
-          {drivers
-            .filter(d => d.currentRoute === selectedRoute.name && d.location)
-            .map(d => (
-              <Marker
-                key={d.id}
-                position={[d.location!.lat, d.location!.lng]}
-                icon={L.divIcon({
-                  className:
-                    "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
-                  html: `<span class="text-xs">${d.name.charAt(0)}</span>`,
-                })}
-              >
-                <Popup>
-                  <div className="text-sm">
-                    <p className="font-semibold">{d.name}</p>
-                    <p>{d.vehicle}</p>
-                    <p>Status: {d.status}</p>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-        </MapContainer>
-      </div>
+                          {drivers
+                            .filter(
+                              (d) =>
+                                d.currentRoute === selectedRoute.name && d.location
+                            )
+                            .map((d) => (
+                              <Marker
+                                key={d.id}
+                                position={[d.location!.lat, d.location!.lng]}
+                                icon={L.divIcon({
+                                  className:
+                                    "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
+                                  html: `<span class="text-xs">${d.name.charAt(0)}</span>`,
+                                })}
+                              >
+                                <Popup>
+                                  <div className="text-sm">
+                                    <p className="font-semibold">{d.name}</p>
+                                    <p>{d.vehicle}</p>
+                                    <p>Status: {d.status}</p>
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            ))}
+                        </MapContainer>
+                      </div>
 
-      {/* Route Info */}
-      <div className="space-y-3">
-        <div>
-          <Label className="text-xs">Route Name</Label>
-          <p className="text-[#222B2D] dark:text-white">{selectedRoute.name}</p>
-        </div>
-        <div>
-          <Label className="text-xs">Assigned Driver</Label>
-          <p className="text-[#222B2D] dark:text-white">
-            {selectedRoute.driver || "Unassigned"}
-          </p>
-        </div>
-        <div>
-          <Label className="text-xs">Priority</Label>
-          <p className={`capitalize ${getPriorityColor(selectedRoute.priority)}`}>
-            {selectedRoute.priority}
-          </p>
-        </div>
-      </div>
-
-      {/* Auto-Assignment Logic */}
-      {!selectedRoute.driver && (
-        <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-          <p className="text-sm text-blue-900 dark:text-blue-100 mb-2">
-            Auto-assign nearest available driver?
-          </p>
-          <Button size="sm" className="w-full">
-            Auto-Assign
-          </Button>
-        </div>
-      )}
-    </div>
-  ) : (
-    <div className="h-64 flex items-center justify-center text-center">
-      <div className="space-y-2">
-        <Map className="w-12 h-12 text-[#222B2D]/20 dark:text-white/20 mx-auto" />
-        <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-          Select a route to view details and preview
-        </p>
-      </div>
-    </div>
-  )}
-</CardContent>
-
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-xs">Route Name</Label>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {selectedRoute.name}
+                          </p>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Assigned Driver</Label>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {selectedRoute.driver || "Unassigned"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-center">
+                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
+                        Select a route to view details.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
               </Card>
             </div>
           </div>
         </TabsContent>
 
-        {/* Performance Metrics */}
+
+        {/* Performance */}
         <TabsContent value="performance">
           <Card>
             <CardHeader>
@@ -758,113 +707,86 @@ useEffect(() => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {drivers.map((driver) => (
-                    <TableRow key={driver.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center">
-                            <span className="text-white text-sm">
-                              {driver.name.charAt(0)}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-[#222B2D] dark:text-white">
-                              {driver.name}
-                            </p>
-                            <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                              {driver.vehicle}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Package className="w-4 h-4 text-blue-600" />
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.deliveriesPerDay}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {driver.successRate >= 95 ? (
-                            <CheckCircle2 className="w-4 h-4 text-[#27AE60]" />
-                          ) : (
-                            <Activity className="w-4 h-4 text-yellow-600" />
-                          )}
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.successRate}%
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Navigation className="w-4 h-4 text-purple-600" />
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.distanceTraveled} km
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[#222B2D] dark:text-white">
-                            {driver.rating}
-                          </span>
-                          <span className="text-yellow-500">★</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm">
-                          View Report
-                        </Button>
+                  {loadingPerf ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center">
+                        Loading performance...
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : performanceRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center">
+                        No performance data yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    performanceRows.map((row) => (
+                      <TableRow key={row.driver_id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center">
+                              <span className="text-white text-sm">
+                                {(row.name ?? "D").charAt(0)}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-[#222B2D] dark:text-white">
+                                {row.name ?? row.driver_id}
+                              </p>
+                              <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                                {row.vehicle_type ?? ""}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          {Number(row.deliveries_per_day).toFixed(1)}
+                        </TableCell>
+                        <TableCell>
+                          {Number(row.success_rate).toFixed(0)}%
+                        </TableCell>
+                        <TableCell>
+                          {Number(row.distance_traveled_km).toFixed(1)} km
+                        </TableCell>
+                        <TableCell>
+                          {row.avg_rating != null
+                            ? Number(row.avg_rating).toFixed(1)
+                            : "—"}{" "}
+                          ★
+                        </TableCell>
+
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm">
+                            View Report
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Schedule Management */}
+         {/* Schedule */}
         <TabsContent value="schedule">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Calendar */}
             <Card className="lg:col-span-1">
               <CardHeader>
                 <CardTitle>Schedule Calendar</CardTitle>
               </CardHeader>
               <CardContent>
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                className="rounded-md border bg-white dark:bg-gray-800 dark:text-white"
-              />
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <div className="w-3 h-3 rounded-full bg-[#27AE60]"></div>
-                    <span className="text-[#222B2D]/60 dark:text-white/60">
-                      Scheduled
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <div className="w-3 h-3 rounded-full bg-blue-600"></div>
-                    <span className="text-[#222B2D]/60 dark:text-white/60">
-                      In Progress
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <div className="w-3 h-3 rounded-full bg-green-700"></div>
-                    <span className="text-[#222B2D]/60 dark:text-white/60">
-                      Completed
-                    </span>
-                  </div>
-                </div>
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  className="rounded-md border bg-white dark:bg-gray-800 dark:text-white"
+                />
               </CardContent>
             </Card>
 
-            {/* Scheduled Deliveries */}
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
@@ -886,24 +808,9 @@ useEffect(() => {
                   <TableBody>
                     {mockScheduledDeliveries.map((schedule) => (
                       <TableRow key={schedule.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <CalendarIcon className="w-4 h-4 text-[#222B2D]/60 dark:text-white/60" />
-                            <span className="text-[#222B2D] dark:text-white">
-                              {schedule.date}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-[#222B2D] dark:text-white">
-                            {schedule.driver}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-[#222B2D] dark:text-white">
-                            {schedule.deliveries} deliveries
-                          </span>
-                        </TableCell>
+                        <TableCell>{schedule.date}</TableCell>
+                        <TableCell>{schedule.driver}</TableCell>
+                        <TableCell>{schedule.deliveries} deliveries</TableCell>
                         <TableCell>
                           <Badge
                             className={
@@ -940,69 +847,9 @@ useEffect(() => {
               <CardTitle>Optimize Routes</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                <h4 className="text-sm text-blue-900 dark:text-blue-100 mb-2">
-                  Route Optimization Algorithm
-                </h4>
-                <p className="text-sm text-blue-900/80 dark:text-blue-100/80">
-                  Our algorithm considers distance, traffic, driver availability,
-                  and delivery priorities to generate the most efficient routes.
-                </p>
-              </div>
-
-           <div className="h-64 rounded-lg overflow-hidden">
-  <MapContainer
-    center={[14.5547, 121.0244]} // default center
-    zoom={12}
-    className="h-full w-full"
-    scrollWheelZoom={false}
-  >
-    <TileLayer
-      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    />
-
-    {/* Driver markers on all routes */}
-    {drivers
-      .filter(d => d.location?.lat && d.location?.lng) // ensure valid coordinates
-      .map(d => (
-        <Marker
-          key={d.id}
-          position={[d.location!.lat, d.location!.lng]}
-          icon={L.divIcon({
-            className:
-              "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
-            html: `<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#27AE60;color:white;font-size:10px;font-weight:bold;">${d.name.charAt(0)}</div>`,
-          })}
-        >
-          <Popup>
-            <div className="text-sm">
-              <p className="font-semibold">{d.name}</p>
-              <p>{d.vehicle}</p>
-              <p>Status: {d.status}</p>
-            </div>
-          </Popup>
-        </Marker>
-      ))}
-  </MapContainer>
-</div>
-
-
-              {/* Optimization Results */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-                  <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                    Total Distance Saved
-                  </p>
-                  <p className="text-[#222B2D] dark:text-white">32.5 km</p>
-                </div>
-                <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-                  <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                    Time Saved
-                  </p>
-                  <p className="text-[#222B2D] dark:text-white">1h 45m</p>
-                </div>
-              </div>
+              <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
+                Optimization UI placeholder.
+              </p>
 
               <div className="flex gap-3 pt-4">
                 <Button
@@ -1013,10 +860,7 @@ useEffect(() => {
                   Cancel
                 </Button>
                 <Button
-                  onClick={() => {
-                    setShowOptimizeModal(false);
-                    // Apply optimized routes
-                  }}
+                  onClick={() => setShowOptimizeModal(false)}
                   className="flex-1"
                 >
                   Apply Optimization
@@ -1029,3 +873,4 @@ useEffect(() => {
     </div>
   );
 }
+
