@@ -86,7 +86,7 @@ export function AdminLayout({
               }`}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              <span className="hidden lg:block">{item.label}</span>
+              <span className="text-xs lg:text-base">{item.label}</span>
               {item.badge && (
                 <Badge
                   variant="destructive"
@@ -141,7 +141,7 @@ export function AdminLayout({
                     <Menu className="w-5 h-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-64 p-0">
+                <SheetContent side="left" className="w-full sm:w-64 p-0">
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
