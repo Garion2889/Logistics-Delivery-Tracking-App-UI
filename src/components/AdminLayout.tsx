@@ -58,7 +58,7 @@ export function AdminLayout({
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-[#27AE60] flex items-center justify-center">
             <Truck className="w-6 h-6 text-white" />
@@ -71,7 +71,7 @@ export function AdminLayout({
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-2 space-y-2">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -79,18 +79,18 @@ export function AdminLayout({
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                 isActive
                   ? "bg-[#27AE60] text-white"
                   : "text-[#222B2D]/70 dark:text-white/70 hover:bg-gray-100 dark:hover:bg-gray-800"
               }`}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              <span className="text-xs lg:text-base">{item.label}</span>
+              <span className="text-sm lg:text-base">{item.label}</span>
               {item.badge && (
                 <Badge
                   variant="destructive"
-                  className="ml-auto hidden lg:flex"
+                  className="ml-auto hidden sm:flex"
                 >
                   {item.badge}
                 </Badge>
@@ -99,23 +99,6 @@ export function AdminLayout({
           );
         })}
       </nav>
-
-      {/* User Info */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-[#27AE60] flex items-center justify-center">
-            <span className="text-white text-sm">
-              {userEmail.charAt(0).toUpperCase()}
-            </span>
-          </div>
-          <div className="hidden lg:block flex-1 min-w-0">
-            <p className="text-sm text-[#222B2D] dark:text-white truncate">
-              {userEmail}
-            </p>
-            <p className="text-xs text-[#222B2D]/60 dark:text-white/60">Admin</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 
@@ -141,7 +124,7 @@ export function AdminLayout({
                     <Menu className="w-5 h-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-full sm:w-64 p-0">
+                <SheetContent side="left" className="w-80 sm:w-64 p-0">
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
