@@ -63,7 +63,7 @@ export function AdminLayout({
           <div className="w-10 h-10 rounded-lg bg-[#27AE60] flex items-center justify-center">
             <Truck className="w-6 h-6 text-white" />
           </div>
-          <div className="hidden lg:block">
+          <div className="lg:block">
             <h2 className="text-[#222B2D] dark:text-white">SmartStock</h2>
             <p className="text-xs text-[#222B2D]/60 dark:text-white/60">Logistics</p>
           </div>
@@ -110,21 +110,34 @@ export function AdminLayout({
           <SidebarContent />
         </aside>
 
-
-
         {/* Main Content */}
         <div className="md:pl-20 lg:pl-64">
           {/* Top Bar */}
           <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between px-4 py-3">
-              {/* Mobile Menu */}
+              {/* Mobile Menu - FIXED DARK MODE PORTAL */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon" className="md:hidden">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="md:hidden text-[#222B2D] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
                     <Menu className="w-5 h-5" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="w-80 sm:w-64 p-0">
+                <SheetContent 
+                  side="left" 
+                  className={`w-80 sm:w-64 p-0 ${
+                    isDarkMode 
+                      ? 'dark bg-[#1a2123] border-gray-700' 
+                      : 'bg-white border-gray-200'
+                  }`}
+                  style={{
+                    backgroundColor: isDarkMode ? '#1a2123' : '#ffffff',
+                    opacity: 1
+                  }}
+                >
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
@@ -133,14 +146,18 @@ export function AdminLayout({
                 {/* Notifications */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="relative">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="relative text-[#222B2D] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                    >
                       <Bell className="w-5 h-5" />
                       <span className="absolute top-1 right-1 w-2 h-2 bg-[#27AE60] rounded-full"></span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-80">
-                    <div className="p-4 border-b">
-                      <h3>Notifications</h3>
+                  <DropdownMenuContent align="end" className="w-80 bg-white dark:bg-[#1a2123] border-gray-200 dark:border-gray-700">
+                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                      <h3 className="text-[#222B2D] dark:text-white">Notifications</h3>
                     </div>
                     <div className="p-4 space-y-3">
                       <div className="text-sm">
@@ -163,11 +180,12 @@ export function AdminLayout({
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Dark Mode Toggle */}
+                {/* Dark Mode Toggle - FIXED ICON COLOR */}
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={onToggleDarkMode}
+                  className="text-[#222B2D] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   {isDarkMode ? (
                     <Sun className="w-5 h-5" />
@@ -181,7 +199,7 @@ export function AdminLayout({
                   variant="ghost"
                   size="icon"
                   onClick={onLogout}
-                  className="text-red-600"
+                  className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
                   <LogOut className="w-5 h-5" />
                 </Button>
