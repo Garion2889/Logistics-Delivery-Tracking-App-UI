@@ -1,40 +1,25 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // adjust path to your supabase client
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "./ui/dialog";
+import { X, User, Mail, Phone, Car } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
 
 interface Driver {
-  id: string;       // drivers.id
-  user_id: string;  // optional
+  id: string;
   name: string;
   email: string;
   phone: string;
-  vehicle: string;
-  status: "online" | "offline";
+  vehicle?: string;
+  license?: string;
 }
 
 interface EditDriverModalProps {
   isOpen: boolean;
   onClose: () => void;
   driver: Driver | null;
-  onUpdate: (driverId: string, userId: string, updates: Partial<Driver>) => void;
-  currentUserId: string; // your logged-in admin UUID
+  onUpdate: (driverId: string, updates: Partial<Driver>) => void;
+  currentUserId: string;
+  isDarkMode?: boolean;
 }
 
 export function EditDriverModal({
@@ -42,7 +27,8 @@ export function EditDriverModal({
   onClose,
   driver,
   onUpdate,
-  currentUserId
+  currentUserId,
+  isDarkMode = false,
 }: EditDriverModalProps) {
   const [formData, setFormData] = useState({
     name: "",
@@ -50,149 +36,455 @@ export function EditDriverModal({
     phone: "",
     vehicle: "",
   });
-  const [userId, setUserId] = useState<string>("");
 
-  // Load initial form data
   useEffect(() => {
     if (!driver) return;
-
     setFormData({
       name: driver.name,
       email: driver.email,
       phone: driver.phone,
-      vehicle: driver.vehicle,
+      vehicle: driver.vehicle || "",
     });
-
-    if (!driver.user_id) {
-      (async () => {
-        const { data, error } = await supabase
-          .from("drivers")
-          .select("user_id")
-          .eq("id", driver.id)
-          .single();
-        if (error) console.error("Failed to fetch user_id:", error);
-        else setUserId(data.user_id);
-      })();
-    } else {
-      setUserId(driver.user_id);
-    }
   }, [driver]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!driver || !userId) return;
-
-    // Prepare updates for RPC
-    const updates = {
-      p_caller: userId,          // your admin UUID
-      p_driver_id: driver.id,
-      p_email: formData.email || null,
-      p_full_name: formData.name || null,
-      p_phone: formData.phone || null,
-      p_vehicle: formData.vehicle ? { type: formData.vehicle } : null, // JSON
-    };
-
-    const { data, error } = await supabase.rpc("update_driver_profile", updates);
-
-    if (error) {
-      console.error("Failed to update driver profile:", error);
-      alert("Error updating driver profile: " + error.message);
-      return;
-    }
-
-    console.log("Driver updated successfully:", data);
-
-    // Notify parent component
-    onUpdate(driver.id, userId, formData);
-
+    if (!driver) return;
+    onUpdate(driver.id, formData);
     onClose();
   };
 
-
-  if (!driver) return null;
+  if (!isOpen || !driver) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[450px]">
-        <DialogHeader>
-          <DialogTitle>Edit Driver</DialogTitle>
-          <DialogDescription>
-            Update the driver's information below.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      {/* Backdrop */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor:
+            isDarkMode ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
+          backdropFilter: "blur(4px)",
+          zIndex: 60,
+        }}
+        onClick={onClose}
+      />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Full Name</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone Number</Label>
-            <Input
-              id="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) =>
-                setFormData({ ...formData, phone: e.target.value })
-              }
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="vehicle">Vehicle Type</Label>
-            <Select
-              value={formData.vehicle}
-              onValueChange={(value) =>
-                setFormData({ ...formData, vehicle: value })
-              }
+      {/* Modal */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 70,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "1rem",
+        }}
+      >
+        <Card
+          style={{
+            width: "100%",
+            maxWidth: "32rem",
+            backgroundColor: isDarkMode ? "#1a2123" : "#ffffff",
+            border: "none",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <CardHeader
+            style={{
+              borderBottom: `1px solid ${
+                isDarkMode ? "#374151" : "#e5e7eb"
+              }`,
+              padding: "1.25rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
             >
-              <SelectTrigger id="vehicle">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Motorcycle">Motorcycle</SelectItem>
-                <SelectItem value="Sedan">Sedan</SelectItem>
-                <SelectItem value="Van">Van</SelectItem>
-                <SelectItem value="Truck">Truck</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "0.5rem",
+                    backgroundColor: isDarkMode
+                      ? "rgba(59, 130, 246, 0.2)"
+                      : "#dbeafe",
+                    borderRadius: "0.5rem",
+                  }}
+                >
+                  <User
+                    style={{
+                      width: "1.25rem",
+                      height: "1.25rem",
+                      color: isDarkMode ? "#60a5fa" : "#2563eb",
+                    }}
+                  />
+                </div>
+                <CardTitle
+                  style={{
+                    fontSize: "1.125rem",
+                    color: isDarkMode ? "#ffffff" : "#222B2D",
+                  }}
+                >
+                  Edit Driver
+                </CardTitle>
+              </div>
+              <button
+                onClick={onClose}
+                style={{
+                  width: "2rem",
+                  height: "2rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: isDarkMode ? "#e5e7eb" : "#4b5563",
+                  backgroundColor: "transparent",
+                  border: "none",
+                  borderRadius: "0.375rem",
+                  cursor: "pointer",
+                  transition: "background-color 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = isDarkMode
+                    ? "rgba(75, 85, 99, 0.5)"
+                    : "rgba(243, 244, 246, 1)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <X style={{ width: "1.25rem", height: "1.25rem" }} />
+              </button>
+            </div>
+          </CardHeader>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="bg-[#27AE60] hover:bg-[#229954] text-white"
-            >
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          {/* Content */}
+          <CardContent
+            style={{
+              padding: "1.25rem",
+              overflowY: "auto",
+              flex: 1,
+            }}
+          >
+            <form onSubmit={handleSubmit}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1.25rem",
+                }}
+              >
+                {/* Name */}
+                <div>
+                  <Label
+                    style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Full Name{" "}
+                    <span style={{ color: "#dc2626" }}>*</span>
+                  </Label>
+                  <div style={{ position: "relative" }}>
+                    <User
+                      style={{
+                        position: "absolute",
+                        left: "0.75rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "1rem",
+                        height: "1rem",
+                        color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
+                      required
+                      style={{
+                        width: "100%",
+                        paddingLeft: "2.5rem",
+                        paddingRight: "0.75rem",
+                        paddingTop: "0.625rem",
+                        paddingBottom: "0.625rem",
+                        fontSize: "0.875rem",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#27AE60";
+                        e.target.style.boxShadow =
+                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = isDarkMode
+                          ? "#4b5563"
+                          : "#d1d5db";
+                        e.target.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <Label
+                    style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Email Address{" "}
+                    <span style={{ color: "#dc2626" }}>*</span>
+                  </Label>
+                  <div style={{ position: "relative" }}>
+                    <Mail
+                      style={{
+                        position: "absolute",
+                        left: "0.75rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "1rem",
+                        height: "1rem",
+                        color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      }}
+                    />
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                      required
+                      style={{
+                        width: "100%",
+                        paddingLeft: "2.5rem",
+                        paddingRight: "0.75rem",
+                        paddingTop: "0.625rem",
+                        paddingBottom: "0.625rem",
+                        fontSize: "0.875rem",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#27AE60";
+                        e.target.style.boxShadow =
+                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = isDarkMode
+                          ? "#4b5563"
+                          : "#d1d5db";
+                        e.target.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <Label
+                    style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Phone Number{" "}
+                    <span style={{ color: "#dc2626" }}>*</span>
+                  </Label>
+                  <div style={{ position: "relative" }}>
+                    <Phone
+                      style={{
+                        position: "absolute",
+                        left: "0.75rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "1rem",
+                        height: "1rem",
+                        color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      }}
+                    />
+                    <input
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) =>
+                        setFormData({ ...formData, phone: e.target.value })
+                      }
+                      required
+                      style={{
+                        width: "100%",
+                        paddingLeft: "2.5rem",
+                        paddingRight: "0.75rem",
+                        paddingTop: "0.625rem",
+                        paddingBottom: "0.625rem",
+                        fontSize: "0.875rem",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#27AE60";
+                        e.target.style.boxShadow =
+                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = isDarkMode
+                          ? "#4b5563"
+                          : "#d1d5db";
+                        e.target.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Vehicle */}
+                <div>
+                  <Label
+                    style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Vehicle Information{" "}
+                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                      (Optional)
+                    </span>
+                  </Label>
+                  <div style={{ position: "relative" }}>
+                    <Car
+                      style={{
+                        position: "absolute",
+                        left: "0.75rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "1rem",
+                        height: "1rem",
+                        color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      }}
+                    />
+                    <input
+                      type="text"
+                      value={formData.vehicle}
+                      onChange={(e) =>
+                        setFormData({ ...formData, vehicle: e.target.value })
+                      }
+                      placeholder="e.g., Toyota Camry 2020"
+                      style={{
+                        width: "100%",
+                        paddingLeft: "2.5rem",
+                        paddingRight: "0.75rem",
+                        paddingTop: "0.625rem",
+                        paddingBottom: "0.625rem",
+                        fontSize: "0.875rem",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.borderColor = "#27AE60";
+                        e.target.style.boxShadow =
+                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = isDarkMode
+                          ? "#4b5563"
+                          : "#d1d5db";
+                        e.target.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    justifyContent: "flex-end",
+                    paddingTop: "1rem",
+                    borderTop: `1px solid ${
+                      isDarkMode ? "#374151" : "#e5e7eb"
+                    }`,
+                    marginTop: "0.5rem",
+                  }}
+                >
+                  <Button
+                    type="button"
+                    onClick={onClose}
+                    variant="outline"
+                    style={{
+                      backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                      borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    style={{
+                      backgroundColor: "#27AE60",
+                      color: "#ffffff",
+                    }}
+                  >
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 }

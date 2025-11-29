@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, User, Mail, Phone, Car, CreditCard } from "lucide-react";
+import { X, User, Mail, Phone, Car, CreditCard, Lock } from "lucide-react"; // Add Lock icon
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
@@ -11,6 +11,7 @@ interface AddDriverModalProps {
     name: string;
     email: string;
     phone: string;
+    password: string; // Add password
     vehicle?: string;
     license?: string;
   }) => void;
@@ -27,6 +28,7 @@ export function AddDriverModal({
     name: "",
     email: "",
     phone: "",
+    password: "", // Add password field
     vehicle: "",
     license: "",
   });
@@ -37,7 +39,6 @@ export function AddDriverModal({
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error for this field
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }));
     }
@@ -60,6 +61,13 @@ export function AddDriverModal({
       newErrors.phone = "Phone is required";
     }
 
+    // Add password validation
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -68,11 +76,11 @@ export function AddDriverModal({
     e.preventDefault();
     if (validateForm()) {
       onSubmit(formData);
-      // Reset form
       setFormData({
         name: "",
         email: "",
         phone: "",
+        password: "", // Reset password
         vehicle: "",
         license: "",
       });
@@ -85,6 +93,7 @@ export function AddDriverModal({
       name: "",
       email: "",
       phone: "",
+      password: "", // Reset password
       vehicle: "",
       license: "",
     });
@@ -93,15 +102,13 @@ export function AddDriverModal({
   };
 
   return (
-    <>
+    <div className={isDarkMode ? "dark" : ""}>
       {/* Backdrop */}
       <div
         style={{
           position: "fixed",
           inset: 0,
-          backgroundColor: isDarkMode
-            ? "rgba(0, 0, 0, 0.7)"
-            : "rgba(0, 0, 0, 0.5)",
+          backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.7)" : "rgba(0, 0, 0, 0.5)",
           backdropFilter: "blur(4px)",
           zIndex: 60,
         }}
@@ -152,9 +159,7 @@ export function AddDriverModal({
                 <div
                   style={{
                     padding: "0.5rem",
-                    backgroundColor: isDarkMode
-                      ? "rgba(39, 174, 96, 0.2)"
-                      : "#d1fae5",
+                    backgroundColor: isDarkMode ? "rgba(39, 174, 96, 0.2)" : "#d1fae5",
                     borderRadius: "0.5rem",
                   }}
                 >
@@ -251,23 +256,18 @@ export function AddDriverModal({
                         paddingTop: "0.625rem",
                         paddingBottom: "0.625rem",
                         fontSize: "0.875rem",
-                        backgroundColor: isDarkMode ? "#374151" : "#ffffff",
-                        borderColor: errors.name
-                          ? "#dc2626"
-                          : isDarkMode
-                          ? "#4b5563"
-                          : "#d1d5db",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: errors.name ? "#dc2626" : isDarkMode ? "#4b5563" : "#d1d5db",
                         borderWidth: "1px",
                         borderStyle: "solid",
-                        borderRadius: "0.375rem",
-                        color: isDarkMode ? "#ffffff" : "#111827",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
                         outline: "none",
                       }}
                       onFocus={(e) => {
                         if (!errors.name) {
                           e.target.style.borderColor = "#27AE60";
-                          e.target.style.boxShadow =
-                            "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                          e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
                         }
                       }}
                       onBlur={(e) => {
@@ -281,13 +281,7 @@ export function AddDriverModal({
                     />
                   </div>
                   {errors.name && (
-                    <p
-                      style={{
-                        marginTop: "0.25rem",
-                        fontSize: "0.75rem",
-                        color: "#dc2626",
-                      }}
-                    >
+                    <p style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "#dc2626" }}>
                       {errors.name}
                     </p>
                   )}
@@ -330,23 +324,18 @@ export function AddDriverModal({
                         paddingTop: "0.625rem",
                         paddingBottom: "0.625rem",
                         fontSize: "0.875rem",
-                        backgroundColor: isDarkMode ? "#374151" : "#ffffff",
-                        borderColor: errors.email
-                          ? "#dc2626"
-                          : isDarkMode
-                          ? "#4b5563"
-                          : "#d1d5db",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: errors.email ? "#dc2626" : isDarkMode ? "#4b5563" : "#d1d5db",
                         borderWidth: "1px",
                         borderStyle: "solid",
-                        borderRadius: "0.375rem",
-                        color: isDarkMode ? "#ffffff" : "#111827",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
                         outline: "none",
                       }}
                       onFocus={(e) => {
                         if (!errors.email) {
                           e.target.style.borderColor = "#27AE60";
-                          e.target.style.boxShadow =
-                            "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                          e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
                         }
                       }}
                       onBlur={(e) => {
@@ -360,13 +349,7 @@ export function AddDriverModal({
                     />
                   </div>
                   {errors.email && (
-                    <p
-                      style={{
-                        marginTop: "0.25rem",
-                        fontSize: "0.75rem",
-                        color: "#dc2626",
-                      }}
-                    >
+                    <p style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "#dc2626" }}>
                       {errors.email}
                     </p>
                   )}
@@ -409,23 +392,18 @@ export function AddDriverModal({
                         paddingTop: "0.625rem",
                         paddingBottom: "0.625rem",
                         fontSize: "0.875rem",
-                        backgroundColor: isDarkMode ? "#374151" : "#ffffff",
-                        borderColor: errors.phone
-                          ? "#dc2626"
-                          : isDarkMode
-                          ? "#4b5563"
-                          : "#d1d5db",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: errors.phone ? "#dc2626" : isDarkMode ? "#4b5563" : "#d1d5db",
                         borderWidth: "1px",
                         borderStyle: "solid",
-                        borderRadius: "0.375rem",
-                        color: isDarkMode ? "#ffffff" : "#111827",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
                         outline: "none",
                       }}
                       onFocus={(e) => {
                         if (!errors.phone) {
                           e.target.style.borderColor = "#27AE60";
-                          e.target.style.boxShadow =
-                            "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                          e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
                         }
                       }}
                       onBlur={(e) => {
@@ -439,14 +417,76 @@ export function AddDriverModal({
                     />
                   </div>
                   {errors.phone && (
-                    <p
-                      style={{
-                        marginTop: "0.25rem",
-                        fontSize: "0.75rem",
-                        color: "#dc2626",
-                      }}
-                    >
+                    <p style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "#dc2626" }}>
                       {errors.phone}
+                    </p>
+                  )}
+                </div>
+
+                {/* Password Field - New Addition */}
+                <div>
+                  <Label
+                    style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: isDarkMode ? "#f3f4f6" : "#374151",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Password <span style={{ color: "#dc2626" }}>*</span>
+                  </Label>
+                  <div style={{ position: "relative" }}>
+                    <Lock
+                      style={{
+                        position: "absolute",
+                        left: "0.75rem",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "1rem",
+                        height: "1rem",
+                        color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      }}
+                    />
+                    <input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => handleChange("password", e.target.value)}
+                      placeholder="Enter password (min. 6 characters)"
+                      style={{
+                        width: "100%",
+                        paddingLeft: "2.5rem",
+                        paddingRight: "0.75rem",
+                        paddingTop: "0.625rem",
+                        paddingBottom: "0.625rem",
+                        fontSize: "0.875rem",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
+                        borderColor: errors.password ? "#dc2626" : isDarkMode ? "#4b5563" : "#d1d5db",
+                        borderWidth: "1px",
+                        borderStyle: "solid",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
+                        outline: "none",
+                      }}
+                      onFocus={(e) => {
+                        if (!errors.password) {
+                          e.target.style.borderColor = "#27AE60";
+                          e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                        }
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.borderColor = errors.password
+                          ? "#dc2626"
+                          : isDarkMode
+                          ? "#4b5563"
+                          : "#d1d5db";
+                        e.target.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                  {errors.password && (
+                    <p style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "#dc2626" }}>
+                      {errors.password}
                     </p>
                   )}
                 </div>
@@ -463,9 +503,7 @@ export function AddDriverModal({
                     }}
                   >
                     Vehicle Information{" "}
-                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                      (Optional)
-                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>(Optional)</span>
                   </Label>
                   <div style={{ position: "relative" }}>
                     <Car
@@ -491,23 +529,20 @@ export function AddDriverModal({
                         paddingTop: "0.625rem",
                         paddingBottom: "0.625rem",
                         fontSize: "0.875rem",
-                        backgroundColor: isDarkMode ? "#374151" : "#ffffff",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
                         borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
                         borderWidth: "1px",
                         borderStyle: "solid",
-                        borderRadius: "0.375rem",
-                        color: isDarkMode ? "#ffffff" : "#111827",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
                         outline: "none",
                       }}
                       onFocus={(e) => {
                         e.target.style.borderColor = "#27AE60";
-                        e.target.style.boxShadow =
-                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                        e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = isDarkMode
-                          ? "#4b5563"
-                          : "#d1d5db";
+                        e.target.style.borderColor = isDarkMode ? "#4b5563" : "#d1d5db";
                         e.target.style.boxShadow = "none";
                       }}
                     />
@@ -526,9 +561,7 @@ export function AddDriverModal({
                     }}
                   >
                     Driver's License{" "}
-                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                      (Optional)
-                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>(Optional)</span>
                   </Label>
                   <div style={{ position: "relative" }}>
                     <CreditCard
@@ -554,23 +587,20 @@ export function AddDriverModal({
                         paddingTop: "0.625rem",
                         paddingBottom: "0.625rem",
                         fontSize: "0.875rem",
-                        backgroundColor: isDarkMode ? "#374151" : "#ffffff",
+                        backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
                         borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
                         borderWidth: "1px",
                         borderStyle: "solid",
-                        borderRadius: "0.375rem",
-                        color: isDarkMode ? "#ffffff" : "#111827",
+                        borderRadius: "0.5rem",
+                        color: isDarkMode ? "#ffffff" : "#222B2D",
                         outline: "none",
                       }}
                       onFocus={(e) => {
                         e.target.style.borderColor = "#27AE60";
-                        e.target.style.boxShadow =
-                          "0 0 0 2px rgba(39, 174, 96, 0.2)";
+                        e.target.style.boxShadow = "0 0 0 2px rgba(39, 174, 96, 0.2)";
                       }}
                       onBlur={(e) => {
-                        e.target.style.borderColor = isDarkMode
-                          ? "#4b5563"
-                          : "#d1d5db";
+                        e.target.style.borderColor = isDarkMode ? "#4b5563" : "#d1d5db";
                         e.target.style.boxShadow = "none";
                       }}
                     />
@@ -583,6 +613,8 @@ export function AddDriverModal({
                     display: "flex",
                     gap: "0.75rem",
                     justifyContent: "flex-end",
+                    paddingTop: "1rem",
+                    borderTop: `1px solid ${isDarkMode ? "#374151" : "#e5e7eb"}`,
                     marginTop: "0.5rem",
                   }}
                 >
@@ -591,7 +623,7 @@ export function AddDriverModal({
                     onClick={handleClose}
                     variant="outline"
                     style={{
-                      backgroundColor: isDarkMode ? "#374151" : "#ffffff",
+                      backgroundColor: isDarkMode ? "#222B2D" : "#ffffff",
                       borderColor: isDarkMode ? "#4b5563" : "#d1d5db",
                       color: isDarkMode ? "#f3f4f6" : "#374151",
                     }}
@@ -613,6 +645,6 @@ export function AddDriverModal({
           </CardContent>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
