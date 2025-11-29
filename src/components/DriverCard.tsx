@@ -1,4 +1,4 @@
-import { Star, Eye, UserX, Phone, Mail, Car, Package } from "lucide-react";
+import { Star, Eye, UserX, Phone, Mail, Car, Package, Edit } from "lucide-react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -18,6 +18,7 @@ interface Driver {
 
 interface DriverCardProps {
   driver: Driver;
+  onEdit: (driverId: string) => void; // ← ADD THIS
   onDeactivate: (driverId: string) => void;
   onViewDetails: (driverId: string) => void;
   isDarkMode?: boolean;
@@ -25,6 +26,7 @@ interface DriverCardProps {
 
 export function DriverCard({
   driver,
+  onEdit, // ← ADD THIS
   onDeactivate,
   onViewDetails,
   isDarkMode = false,
@@ -122,7 +124,15 @@ export function DriverCard({
             className="flex-1 h-8 text-xs border-gray-300 dark:border-gray-600 text-[#222B2D] dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <Eye className="w-3.5 h-3.5 mr-1.5" />
-            View Details
+            View
+          </Button>
+          <Button
+            onClick={() => onEdit(driver.id)}
+            variant="outline"
+            size="sm"
+            className="h-8 px-3 border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+          >
+            <Edit className="w-3.5 h-3.5" />
           </Button>
           <Button
             onClick={() => onDeactivate(driver.id)}
