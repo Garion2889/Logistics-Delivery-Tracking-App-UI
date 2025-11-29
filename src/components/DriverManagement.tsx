@@ -12,6 +12,9 @@ import {
   TableRow,
 } from "./ui/table";
 import { Search, Plus, Edit, UserX, User, Truck } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "../utils/supabase/client";
+import { DeactivatedDriversModal } from "./DeactivatedDriversModal";
 
 interface Driver {
   id: string;
@@ -29,23 +32,118 @@ interface DriverManagementProps {
   onDeactivateDriver: (driver: Driver) => void;
   onShowCreateDriverModal: () => void; 
   onShowEditDriverModal: (driver: Driver) => void;
+  onRefreshDrivers?: () => void; // Add this to refresh the main list
 }
-
-
 
 export function DriverManagement({
   drivers,
   onDeactivateDriver,
   onShowCreateDriverModal,
-  onShowEditDriverModal
+  onShowEditDriverModal,
+  onRefreshDrivers
 }: DriverManagementProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [isDeactivatedModalOpen, setIsDeactivatedModalOpen] = useState(false);
+  const [deactivatedDrivers, setDeactivatedDrivers] = useState<any[]>([]);
 
   const filteredDrivers = drivers.filter(
     (driver) =>
       driver.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       driver.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Fetch deactivated drivers
+  const fetchDeactivatedDrivers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select(`
+          id,
+          user_id,
+          is_active,
+          updated_at,
+          users!inner (
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .eq("is_active", false)
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("Failed to fetch deactivated drivers:", error);
+        toast.error("Failed to load deactivated drivers");
+        return;
+      }
+
+      const transformedData = data.map((driver: any) => ({
+        id: driver.id,
+        name: driver.users.full_name,
+        email: driver.users.email,
+        phone: driver.users.phone,
+        deactivatedAt: driver.updated_at,
+        reason: "Account deactivated by admin",
+      }));
+
+      setDeactivatedDrivers(transformedData);
+      setIsDeactivatedModalOpen(true);
+    } catch (err) {
+      console.error("Error fetching deactivated drivers:", err);
+      toast.error("An error occurred");
+    }
+  };
+
+  // Reactivate driver function
+  const handleReactivateDriver = async (driverId: string) => {
+    try {
+      const { error } = await supabase
+        .from("drivers")
+        .update({ is_active: true })
+        .eq("id", driverId);
+
+      if (error) {
+        console.error("Failed to reactivate driver:", error);
+        toast.error(`Failed to reactivate driver: ${error.message}`);
+        return;
+      }
+
+      toast.success("Driver reactivated successfully");
+      
+      // Refresh both lists
+      await fetchDeactivatedDrivers();
+      if (onRefreshDrivers) {
+        onRefreshDrivers();
+      }
+    } catch (err: any) {
+      console.error("Error reactivating driver:", err);
+      toast.error(`An error occurred: ${err.message || "Unknown error"}`);
+    }
+  };
+
+  // Fixed deactivate handler
+  const handleDeactivateClick = async (driver: Driver) => {
+    try {
+      const { error } = await supabase
+        .from("drivers")
+        .update({ is_active: false })
+        .eq("id", driver.id);
+
+      if (error) {
+        console.error("Deactivate error:", error);
+        toast.error(`Failed to deactivate driver: ${error.message}`);
+        return;
+      }
+
+      toast.success("Driver deactivated successfully");
+      
+      // Call the parent's onDeactivateDriver to refresh the list
+      onDeactivateDriver(driver);
+    } catch (err: any) {
+      console.error("Deactivate error:", err);
+      toast.error(`An error occurred: ${err.message || "Unknown error"}`);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -59,13 +157,25 @@ export function DriverManagement({
             Manage driver accounts and assignments
           </p>
         </div>
-        <Button
-          onClick={onShowCreateDriverModal}
-          className="bg-[#27AE60] hover:bg-[#229954] text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Create Driver Account
-        </Button>
+        <div className="flex gap-2">
+          {/* View Deactivated Drivers Button */}
+          <Button
+            onClick={fetchDeactivatedDrivers}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <UserX className="w-4 h-4" />
+            View Deactivated
+          </Button>
+          
+          <Button
+            onClick={onShowCreateDriverModal}
+            className="bg-[#27AE60] hover:bg-[#229954] text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Create Driver Account
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -157,7 +267,7 @@ export function DriverManagement({
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => onDeactivateDriver(driver)}
+                        onClick={() => handleDeactivateClick(driver)}
                         className="text-red-600"
                       >
                         <UserX className="w-4 h-4" />
@@ -231,7 +341,7 @@ export function DriverManagement({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onDeactivateDriver(driver.id)}
+                  onClick={() => handleDeactivateClick(driver)}
                   className="flex-1 text-red-600"
                 >
                   <UserX className="w-4 h-4 mr-2" />
@@ -242,6 +352,15 @@ export function DriverManagement({
           </Card>
         ))}
       </div>
+
+      {/* Deactivated Drivers Modal */}
+      <DeactivatedDriversModal
+        isOpen={isDeactivatedModalOpen}
+        onClose={() => setIsDeactivatedModalOpen(false)}
+        drivers={deactivatedDrivers}
+        isDarkMode={false} // You can pass your dark mode state here if available
+        onReactivate={handleReactivateDriver}
+      />
     </div>
   );
 }
