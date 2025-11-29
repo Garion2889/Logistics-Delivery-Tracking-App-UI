@@ -358,7 +358,7 @@ export function DriverManagement({
         isOpen={isDeactivatedModalOpen}
         onClose={() => setIsDeactivatedModalOpen(false)}
         drivers={deactivatedDrivers}
-        isDarkMode={false} // You can pass your dark mode state here if available
+        isDarkMode={true} // You can pass your dark mode state here if available
         onReactivate={handleReactivateDriver}
       />
     </div>

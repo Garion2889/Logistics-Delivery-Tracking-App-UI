@@ -28,7 +28,7 @@ export function DeactivatedDriversModal({
   isOpen,
   onClose,
   drivers,
-  isDarkMode = false,
+  isDarkMode = true,
   onReactivate,
 }: DeactivatedDriversModalProps) {
   const [reactivating, setReactivating] = useState<string | null>(null);
@@ -114,17 +114,33 @@ export function DeactivatedDriversModal({
   };
 
   return (
-    <div className={isDarkMode ? "dark" : ""}>
+    <>
       {/* Backdrop Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 animate-in fade-in duration-200"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: isDarkMode ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 60,
+          animation: 'fadeIn 0.2s ease-in-out'
+        }}
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Modal Container - Better proportions */}
+      {/* Modal Container */}
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 70,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0.75rem 1rem',
+          overflowY: 'auto'
+        }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
@@ -132,114 +148,285 @@ export function DeactivatedDriversModal({
       >
         <div
           ref={modalRef}
-          className="relative w-full max-w-2xl lg:max-w-3xl my-6 sm:my-8 animate-in zoom-in-95 duration-200"
+          style={{
+            position: 'relative',
+            width: '100%',
+            maxWidth: '48rem',
+            margin: '1.5rem 0',
+            animation: 'zoomIn 0.2s ease-in-out'
+          }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Card with max height to prevent full screen takeover */}
-          <Card className="border-0 shadow-2xl bg-white dark:bg-[#1a2123] max-h-[85vh] flex flex-col overflow-hidden">
-            {/* Header - Sticky with flex-shrink-0 */}
-            <CardHeader className="flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700 p-4 sm:p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-2 sm:gap-4">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                  <div className="p-1.5 sm:p-2 bg-red-100 dark:bg-red-900/20 rounded-lg flex-shrink-0">
-                    <UserX className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400" />
+          {/* Card */}
+          <Card 
+            style={{
+              backgroundColor: isDarkMode ? '#3d4a4f' : '#ffffff',
+              border: 'none',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              borderRadius: '0.5rem'
+            }}
+          >
+            {/* Header - REPLACED CardHeader with div */}
+            <div 
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 10,
+                backgroundColor: isDarkMode ? '#3d4a4f' : '#ffffff',
+                borderBottom: `1px solid ${isDarkMode ? '#6b7280' : '#e5e7eb'}`,
+                padding: '1rem 1.25rem',
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
+                  <div 
+                    style={{
+                      padding: '0.5rem',
+                      backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#fee2e2',
+                      borderRadius: '0.5rem'
+                    }}
+                  >
+                    <UserX 
+                      style={{
+                        width: '1.25rem',
+                        height: '1.25rem',
+                        color: isDarkMode ? '#f87171' : '#dc2626'
+                      }}
+                    />
                   </div>
-                  <div className="min-w-0 flex-1">
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <h2
                       id="modal-title"
-                      className="text-base sm:text-lg font-semibold text-[#222B2D] dark:text-white truncate"
+                      style={{
+                        fontSize: '1.125rem',
+                        fontWeight: 600,
+                        color: isDarkMode ? '#ffffff' : '#222B2D',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
                     >
                       Deactivated Drivers
                     </h2>
                     <p
                       id="modal-description"
-                      className="text-xs text-gray-500 dark:text-gray-400"
+                      style={{
+                        fontSize: '0.75rem',
+                        color: isDarkMode ? '#e5e7eb' : '#6b7280',
+                        marginTop: '0.25rem'
+                      }}
                     >
                       {filteredDrivers.length} of {drivers.length} {drivers.length === 1 ? "account" : "accounts"}
                     </p>
                   </div>
                 </div>
-                <Button
+                <button
                   ref={closeButtonRef}
-                  variant="ghost"
-                  size="icon"
                   onClick={onClose}
-                  className="hover:bg-gray-100 dark:hover:bg-gray-800 flex-shrink-0 h-8 w-8 sm:h-9 sm:w-9"
+                  style={{
+                    width: '2rem',
+                    height: '2rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isDarkMode ? '#e5e7eb' : '#4b5563',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDarkMode ? 'rgba(75, 85, 99, 0.5)' : 'rgba(243, 244, 246, 1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
                   aria-label="Close modal"
                 >
-                  <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                </Button>
+                  <X style={{ width: '1.25rem', height: '1.25rem' }} />
+                </button>
               </div>
 
-              {/* Search Bar */}
+              {/* Search Bar - REPLACED Input with input */}
               {drivers.length > 0 && (
-                <div className="mt-4 relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400" />
-                  <Input
+                <div style={{ marginTop: '1rem', position: 'relative' }}>
+                  <Search 
+                    style={{
+                      position: 'absolute',
+                      left: '0.625rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '1rem',
+                      height: '1rem',
+                      color: isDarkMode ? '#e5e7eb' : '#9ca3af',
+                      pointerEvents: 'none'
+                    }}
+                  />
+                  <input
+                    type="text"
                     placeholder="Search by name, email, or phone..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8 sm:pl-9 h-9 sm:h-10 text-sm"
+                    style={{
+                      paddingLeft: '2.25rem',
+                      height: '2.5rem',
+                      fontSize: '0.875rem',
+                      backgroundColor: isDarkMode ? '#4b5563' : '#ffffff',
+                      borderColor: isDarkMode ? '#6b7280' : '#e5e7eb',
+                      color: isDarkMode ? '#ffffff' : '#111827',
+                      borderWidth: '1px',
+                      borderStyle: 'solid',
+                      borderRadius: '0.375rem',
+                      width: '100%',
+                      outline: 'none'
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#27AE60';
+                      e.target.style.boxShadow = '0 0 0 2px rgba(39, 174, 96, 0.2)';
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = isDarkMode ? '#6b7280' : '#e5e7eb';
+                      e.target.style.boxShadow = 'none';
+                    }}
                     aria-label="Search drivers"
                   />
                 </div>
               )}
-            </CardHeader>
+            </div>
 
-            {/* Body - Scrollable with better height control and custom scrollbar */}
+            {/* Body */}
             <CardContent 
-              className="flex-1 p-4 sm:p-5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent"
+              className="custom-scrollbar"
               style={{
-                maxHeight: 'calc(85vh - 180px)', // Prevents content from being too tall
+                flex: 1,
+                padding: '1.25rem',
+                overflowY: 'auto',
+                backgroundColor: isDarkMode ? '#3d4a4f' : '#ffffff',
+                maxHeight: 'calc(85vh - 180px)'
               }}
             >
               {drivers.length === 0 ? (
-                <div className="text-center py-8 sm:py-12">
-                  <UserX className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2 sm:mb-3" />
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">
+                <div style={{ textAlign: 'center', padding: '3rem 0' }}>
+                  <UserX 
+                    style={{
+                      width: '3rem',
+                      height: '3rem',
+                      color: isDarkMode ? '#9ca3af' : '#d1d5db',
+                      margin: '0 auto 0.75rem'
+                    }}
+                  />
+                  <p 
+                    style={{
+                      fontSize: '0.875rem',
+                      color: isDarkMode ? '#d1d5db' : '#6b7280'
+                    }}
+                  >
                     No deactivated drivers found
                   </p>
                 </div>
               ) : filteredDrivers.length === 0 ? (
-                <div className="text-center py-8 sm:py-12">
-                  <Search className="w-10 h-10 sm:w-12 sm:h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2 sm:mb-3" />
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">
+                <div style={{ textAlign: 'center', padding: '3rem 0' }}>
+                  <Search 
+                    style={{
+                      width: '3rem',
+                      height: '3rem',
+                      color: isDarkMode ? '#9ca3af' : '#d1d5db',
+                      margin: '0 auto 0.75rem'
+                    }}
+                  />
+                  <p 
+                    style={{
+                      fontSize: '0.875rem',
+                      color: isDarkMode ? '#d1d5db' : '#6b7280'
+                    }}
+                  >
                     No drivers match your search
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3 sm:space-y-4">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {filteredDrivers.map((driver, index) => (
                     <Card
                       key={driver.id}
-                      className="border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md transition-all duration-200"
                       style={{
-                        // Add subtle animation delay for visual hierarchy
-                        animationDelay: `${index * 50}ms`,
+                        backgroundColor: isDarkMode ? '#4b5563' : '#ffffff',
+                        borderColor: isDarkMode ? '#6b7280' : '#e5e7eb',
+                        borderWidth: '1px',
+                        borderStyle: 'solid',
+                        borderRadius: '0.5rem',
+                        transition: 'all 0.2s',
+                        animationDelay: `${index * 50}ms`
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.boxShadow = 'none';
                       }}
                     >
-                      <CardContent className="p-3 sm:p-4">
+                      <CardContent style={{ padding: '1rem' }}>
                         {/* Header Row */}
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <h3 className="font-medium text-sm sm:text-base text-[#222B2D] dark:text-white truncate flex-1">
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                          <h3 
+                            style={{
+                              fontWeight: 500,
+                              fontSize: '0.875rem',
+                              color: isDarkMode ? '#ffffff' : '#222B2D',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1
+                            }}
+                          >
                             {driver.name}
                           </h3>
                           <Badge
                             variant="outline"
-                            className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800 text-xs flex-shrink-0"
+                            style={{
+                              fontSize: '0.75rem',
+                              backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#fef2f2',
+                              color: isDarkMode ? '#f87171' : '#b91c1c',
+                              borderColor: isDarkMode ? '#991b1b' : '#fecaca',
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '0.375rem',
+                              borderWidth: '1px',
+                              borderStyle: 'solid'
+                            }}
                           >
                             Deactivated
                           </Badge>
                         </div>
 
                         {/* Info Grid */}
-                        <div className="space-y-2 text-xs sm:text-sm mb-3">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.75rem', fontSize: '0.875rem' }}>
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 cursor-help">
-                                  <Mail className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                                  <span className="truncate">{driver.email}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'help' }}>
+                                  <Mail 
+                                    style={{
+                                      width: '1rem',
+                                      height: '1rem',
+                                      color: isDarkMode ? '#e5e7eb' : '#6b7280',
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                  <span 
+                                    style={{
+                                      color: isDarkMode ? '#f3f4f6' : '#374151',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    {driver.email}
+                                  </span>
                                 </div>
                               </TooltipTrigger>
                               <TooltipContent>
@@ -249,15 +436,31 @@ export function DeactivatedDriversModal({
                           </TooltipProvider>
 
                           {driver.phone && (
-                            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
-                              <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                              <span>{formatPhone(driver.phone)}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <Phone 
+                                style={{
+                                  width: '1rem',
+                                  height: '1rem',
+                                  color: isDarkMode ? '#e5e7eb' : '#6b7280',
+                                  flexShrink: 0
+                                }}
+                              />
+                              <span style={{ color: isDarkMode ? '#f3f4f6' : '#374151' }}>
+                                {formatPhone(driver.phone)}
+                              </span>
                             </div>
                           )}
                           
-                          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 text-xs">
-                            <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 flex-shrink-0" />
-                            <span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+                            <Clock 
+                              style={{
+                                width: '1rem',
+                                height: '1rem',
+                                color: isDarkMode ? '#e5e7eb' : '#6b7280',
+                                flexShrink: 0
+                              }}
+                            />
+                            <span style={{ color: isDarkMode ? '#e5e7eb' : '#6b7280' }}>
                               {new Date(driver.deactivatedAt).toLocaleDateString("en-US", {
                                 month: "short",
                                 day: "numeric",
@@ -269,55 +472,146 @@ export function DeactivatedDriversModal({
 
                         {/* Reason */}
                         {driver.reason && (
-                          <div className="mb-3 p-2.5 bg-gray-50 dark:bg-gray-800/50 rounded text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
-                            <span className="font-medium">Reason:</span> {driver.reason}
+                          <div 
+                            style={{
+                              marginBottom: '0.75rem',
+                              padding: '0.625rem',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.75rem',
+                              backgroundColor: isDarkMode ? '#374151' : '#f9fafb',
+                              color: isDarkMode ? '#f3f4f6' : '#4b5563',
+                              borderColor: isDarkMode ? '#6b7280' : '#e5e7eb',
+                              borderWidth: '1px',
+                              borderStyle: 'solid'
+                            }}
+                          >
+                            <span style={{ fontWeight: 500 }}>Reason:</span> {driver.reason}
                           </div>
                         )}
 
                         {/* Action Buttons */}
                         {confirmingReactivate === driver.id ? (
-                          <div className="space-y-2">
-                            <div className="flex items-start gap-2 p-2.5 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
-                              <AlertCircle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-                              <p className="text-yellow-800 dark:text-yellow-200">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <div 
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                gap: '0.5rem',
+                                padding: '0.625rem',
+                                borderRadius: '0.375rem',
+                                fontSize: '0.75rem',
+                                backgroundColor: isDarkMode ? 'rgba(234, 179, 8, 0.2)' : '#fefce8',
+                                borderColor: isDarkMode ? '#ca8a04' : '#fde047',
+                                borderWidth: '1px',
+                                borderStyle: 'solid'
+                              }}
+                            >
+                              <AlertCircle 
+                                style={{
+                                  width: '1rem',
+                                  height: '1rem',
+                                  color: isDarkMode ? '#fbbf24' : '#ca8a04',
+                                  flexShrink: 0,
+                                  marginTop: '0.125rem'
+                                }}
+                              />
+                              <p style={{ color: isDarkMode ? '#fef3c7' : '#92400e' }}>
                                 Are you sure you want to reactivate <strong>{driver.name}</strong>?
                               </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
                               <Button
                                 onClick={() => confirmReactivate(driver.id, driver.name)}
                                 disabled={reactivating === driver.id}
-                                className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white h-9 sm:h-10 text-xs sm:text-sm"
+                                style={{
+                                  flex: 1,
+                                  height: '2.5rem',
+                                  fontSize: '0.875rem',
+                                  backgroundColor: '#27AE60',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '0.375rem',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '0.375rem',
+                                  opacity: reactivating === driver.id ? 0.5 : 1,
+                                  transition: 'background-color 0.2s'
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!reactivating) e.currentTarget.style.backgroundColor = '#229954';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!reactivating) e.currentTarget.style.backgroundColor = '#27AE60';
+                                }}
                                 size="sm"
                               >
-                                <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5" />
+                                <UserCheck style={{ width: '1rem', height: '1rem' }} />
                                 Confirm
                               </Button>
-                              <Button
+                              <button
                                 onClick={cancelReactivate}
-                                variant="outline"
-                                className="flex-1 h-9 sm:h-10 text-xs sm:text-sm"
-                                size="sm"
+                                style={{
+                                  flex: 1,
+                                  height: '2.5rem',
+                                  fontSize: '0.875rem',
+                                  backgroundColor: isDarkMode ? '#4b5563' : '#ffffff',
+                                  borderColor: isDarkMode ? '#6b7280' : '#d1d5db',
+                                  color: isDarkMode ? '#f3f4f6' : '#374151',
+                                  borderWidth: '1px',
+                                  borderStyle: 'solid',
+                                  borderRadius: '0.375rem',
+                                  cursor: 'pointer',
+                                  transition: 'background-color 0.2s'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = isDarkMode ? 'rgba(75, 85, 99, 0.8)' : 'rgba(243, 244, 246, 1)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = isDarkMode ? '#4b5563' : '#ffffff';
+                                }}
                               >
                                 Cancel
-                              </Button>
+                              </button>
                             </div>
                           </div>
                         ) : (
                           <Button
                             onClick={() => handleReactivate(driver.id, driver.name)}
                             disabled={reactivating === driver.id}
-                            className="w-full bg-[#27AE60] hover:bg-[#229954] text-white h-9 sm:h-10 text-xs sm:text-sm"
+                            style={{
+                              width: '100%',
+                              height: '2.5rem',
+                              fontSize: '0.875rem',
+                              backgroundColor: '#27AE60',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '0.375rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.375rem',
+                              opacity: reactivating === driver.id ? 0.5 : 1,
+                              transition: 'background-color 0.2s'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!reactivating) e.currentTarget.style.backgroundColor = '#229954';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!reactivating) e.currentTarget.style.backgroundColor = '#27AE60';
+                            }}
                             size="sm"
                           >
                             {reactivating === driver.id ? (
                               <>
-                                <span className="animate-spin mr-1.5">⏳</span>
+                                <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span>
                                 Reactivating...
                               </>
                             ) : (
                               <>
-                                <UserCheck className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5" />
+                                <UserCheck style={{ width: '1rem', height: '1rem' }} />
                                 Reactivate Driver
                               </>
                             )}
@@ -333,28 +627,40 @@ export function DeactivatedDriversModal({
         </div>
       </div>
 
-      {/* Custom Scrollbar Styles */}
-      <style jsx global>{`
-        .scrollbar-thin::-webkit-scrollbar {
+      {/* Custom Styles */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        @keyframes zoomIn {
+          from { transform: scale(0.95); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
-        .scrollbar-thin::-webkit-scrollbar-track {
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }
-        .scrollbar-thin::-webkit-scrollbar-thumb {
-          background-color: rgba(156, 163, 175, 0.5);
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: ${isDarkMode ? 'rgba(107, 114, 128, 0.7)' : 'rgba(156, 163, 175, 0.5)'};
           border-radius: 3px;
         }
-        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-          background-color: rgba(107, 114, 128, 0.7);
-        }
-        .dark .scrollbar-thin::-webkit-scrollbar-thumb {
-          background-color: rgba(75, 85, 99, 0.5);
-        }
-        .dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-          background-color: rgba(55, 65, 81, 0.7);
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background-color: ${isDarkMode ? 'rgba(75, 85, 99, 0.9)' : 'rgba(107, 114, 128, 0.7)'};
         }
       `}</style>
-    </div>
+    </>
   );
 }
