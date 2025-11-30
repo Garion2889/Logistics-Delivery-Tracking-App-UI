@@ -136,16 +136,16 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
     .from("drivers")
     .insert([
       {
-        full_name: driverData.name,
-        email: driverData.email,
-        phone: driverData.phone,
-        vehicle: driverData.vehicle,
-        status: "inactive",
-        rating: 0,
-        completedDeliveries: 0,
-        isDeactivated: false,
+        name: driverData.name,
+        user_id: driverData.user_id,  // if used
+        vehicle_type: driverData.vehicle,
+        plate_number: null,
+        license_number: null,
+        status: "offline",
       },
-    ]);
+    ])
+    .select();
+
 
   if (error) {
     console.error("Insert error:", error);
