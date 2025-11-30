@@ -227,7 +227,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
             <PanToSelectedDriver 
               selectedDriver={selectedDriver ? { 
                 location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } 
-              } : null} 
+              } : null} role = "driver"
             />
             {driverLocations.map((driver) => (
               <Marker
