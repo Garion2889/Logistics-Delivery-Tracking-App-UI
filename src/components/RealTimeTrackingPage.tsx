@@ -72,7 +72,14 @@ interface LocationHistory {
   recorded_at: string;
 }
 
-
+  const defaultIcon = new L.Icon({
+    iconUrl: markerIcon,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: markerShadow,
+    shadowSize: [41, 41],
+  });
 
 export function RealTimeTrackingPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
@@ -627,7 +634,7 @@ useEffect(() => {
     : [driver.location.lat, driver.location.lng];
 
   return (
-    <Marker key={driver.id} position={markerPos}>
+    <Marker key={driver.id} position={markerPos} icon={defaultIcon}>
       <Popup>
         <div className="p-2">
           <h4 className="font-semibold">{driver.name}</h4>
