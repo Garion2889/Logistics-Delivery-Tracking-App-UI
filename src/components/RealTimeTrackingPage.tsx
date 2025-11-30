@@ -7,11 +7,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { MapContainer, TileLayer, Marker, Popup, Circle as LeafletCircle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
 import {
   MapPin,
   Navigation,
@@ -24,7 +25,7 @@ import {
   SkipBack,
   SkipForward,
   Search,
-  Circle,
+
   Users,
   TrendingUp,
   Navigation2,
@@ -53,6 +54,7 @@ interface Driver {
   is_active?: boolean | null;
   created_at?: string | null;
   updated_at?: string | null;
+  location: { lat: number; lng: number } | null;
   currentRoute?: string;
   completedStops: number;
   totalStops: number;
@@ -62,93 +64,15 @@ interface Driver {
   lastUpdate: string;
 }
 
-
-interface GeofenceZone {
-  id: string;
-  name: string;
-  type: "circle" | "polygon";
-  center?: { lat: number; lng: number };
-  radius?: number;
-  color: string;
-  active: boolean;
-}
-
 interface LocationHistory {
-  timestamp: string;
-  location: { lat: number; lng: number };
-  speed: number;
-  event?: string;
+  location_history_id: string;
+  driver_id: string;
+  lat?: number;
+  lng?: number;
+  recorded_at: string;
 }
-  const defaultIcon = new L.Icon({
-    iconUrl: markerIcon,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowUrl: markerShadow,
-    shadowSize: [41, 41],
-  });
-const mockDrivers: Driver[] = [];
 
-const mockGeofences: GeofenceZone[] = [
-  {
-    id: "1",
-    name: "Makati CBD",
-    type: "circle",
-    center: { lat: 14.5547, lng: 121.0244 },
-    radius: 2000,
-    color: "#27AE60",
-    active: true,
-  },
-  {
-    id: "2",
-    name: "BGC Area",
-    type: "circle",
-    center: { lat: 14.5547, lng: 121.0494 },
-    radius: 1500,
-    color: "#3498DB",
-    active: true,
-  },
-  {
-    id: "3",
-    name: "Quezon City Hub",
-    type: "circle",
-    center: { lat: 14.6091, lng: 121.0223 },
-    radius: 2500,
-    color: "#F39C12",
-    active: false,
-  },
-];
 
-const mockLocationHistory: LocationHistory[] = [
-  {
-    timestamp: "2:45 PM",
-    location: { lat: 14.5547, lng: 121.0244 },
-    speed: 45,
-    event: "Delivery completed",
-  },
-  {
-    timestamp: "2:30 PM",
-    location: { lat: 14.5595, lng: 121.0295 },
-    speed: 38,
-    event: "En route to customer",
-  },
-  {
-    timestamp: "2:15 PM",
-    location: { lat: 14.5650, lng: 121.0350 },
-    speed: 42,
-  },
-  {
-    timestamp: "2:00 PM",
-    location: { lat: 14.5700, lng: 121.0400 },
-    speed: 35,
-    event: "Entered geofence: Makati CBD",
-  },
-  {
-    timestamp: "1:45 PM",
-    location: { lat: 14.5750, lng: 121.0450 },
-    speed: 40,
-  },
-];
 
 export function RealTimeTrackingPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
@@ -157,9 +81,179 @@ export function RealTimeTrackingPage() {
   const [playbackSpeed, setPlaybackSpeed] = useState([1]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [drivers, setDrivers] = useState<Driver[]>(mockDrivers);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [locationHistory, setLocationHistory] = useState<{
+  location: { lat: number; lng: number };
+  recorded_at: string;
+}[]>([]);
+  const [autoLoggingEnabled, setAutoLoggingEnabled] = useState(true);
 
-  // Fetch real drivers from Supabase with their locations
+const [filterStartDate, setFilterStartDate] = useState<string>("");
+const [filterEndDate, setFilterEndDate] = useState<string>("");
+const [playbackIndex, setPlaybackIndex] = useState(0);
+
+// Automatically advance playback when isPlaying changes
+useEffect(() => {
+if (!isPlaying || locationHistory.length === 0) return;
+
+const interval = setInterval(() => {
+setPlaybackIndex((prev) => {
+if (prev >= locationHistory.length - 1) {
+clearInterval(interval);
+return prev;
+}
+return prev + 1;
+});
+}, 1000 / playbackSpeed[0]); // 1 second / speed factor
+
+return () => clearInterval(interval);
+}, [isPlaying, playbackSpeed, locationHistory]);
+
+// Reset playbackIndex when driver changes
+useEffect(() => {
+setPlaybackIndex(0);
+}, [selectedDriver]);
+
+// Current location for map marker highlight
+const currentPlaybackLocation = locationHistory[playbackIndex]?.location;
+useEffect(() => {
+  if (!isPlaying || locationHistory.length === 0) return;
+
+  const speed = playbackSpeed[0];
+
+  const interval = setInterval(() => {
+    setPlaybackIndex((prev) => {
+      if (prev >= locationHistory.length - 1) {
+        setIsPlaying(false); // stop at end
+        return prev;
+      }
+      return prev + 1;
+    });
+  }, 1000 / speed);
+
+  return () => clearInterval(interval);
+}, [isPlaying, playbackSpeed, locationHistory]);
+
+// Handlers for skip buttons
+const handleSkipBack = () => setPlaybackIndex((prev) => Math.max(prev - 1, 0));
+const handleSkipForward = () =>
+setPlaybackIndex((prev) => Math.min(prev + 1, locationHistory.length - 1));
+
+const log_location_history = async (driverId: string, lat: number, lng: number) => {
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/last_location_recorder`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          id: driverId,
+          last_lat: lat,
+          last_lng: lng,
+        }),
+      }
+    );
+
+    const data = await res.json();
+    console.log("Edge function response:", data);
+
+    if (data?.recorded) {
+      setLocationHistory(prev => [
+        {
+          location: { lat: data.recorded.lat, lng: data.recorded.lng },
+          recorded_at: data.recorded.recorded_at,
+        },
+        ...prev,
+      ]);
+    }
+  } catch (err) {
+    console.error("Error logging location history:", err);
+  }
+};
+useEffect(() => {
+  const interval = setInterval(async () => {
+    try {
+      // Call your edge function that handles all active drivers
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/last_location_recorder`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      const data = await res.json();
+      console.log("Location history logged for active drivers:", data);
+    } catch (err) {
+      console.error("Error logging driver locations:", err);
+    }
+  }, 15 * 60 * 1000); // 15 minutes
+
+  return () => clearInterval(interval); // cleanup
+}, []); // empty dependency array → runs once and keeps interval
+
+
+
+//To display location history
+const fetchLocationHistory = async (driverId: string) => {
+  try {
+    let query = supabase
+      .from('driver_location_history')
+      .select('lat, lng, recorded_at')
+      .eq('driver_id', driverId)
+      .order('recorded_at', { ascending: false });
+
+    if (filterStartDate) {
+      query = query.gte('recorded_at', filterStartDate);
+    }
+    if (filterEndDate) {
+      query = query.lte('recorded_at', filterEndDate);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error fetching location history:', error);
+      setLocationHistory([]);
+      return;
+    }
+
+    if (!data || !Array.isArray(data)) {
+      console.error("Unexpected response format:", data);
+      setLocationHistory([]);
+      return;
+    }
+
+    const formatted = data.map((row: any) => ({
+      location: { lat: row.lat, lng: row.lng },
+      recorded_at: row.recorded_at,
+    }));
+
+    console.log('Fetched location history data:', formatted);
+    setLocationHistory(formatted);
+  } catch (err) {
+    console.error("Error fetching location history:", err);
+    setLocationHistory([]);
+  }
+};
+
+useEffect(() => {
+  if (!selectedDriver) return;
+
+  fetchLocationHistory(selectedDriver.id);
+  const interval = setInterval(() => {
+    fetchLocationHistory(selectedDriver.id);
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, [selectedDriver, filterStartDate, filterEndDate]);
+
   useEffect(() => {
     const fetchDrivers = async () => {
       try {
@@ -220,7 +314,7 @@ export function RealTimeTrackingPage() {
           setDrivers(formattedDrivers);
           
           // Set first driver with location as selected
-          const driverWithLocation = formattedDrivers.find(d => d.location !== null);
+          const driverWithLocation = formattedDrivers.find(d => d.last_location_update !== null);
           if (driverWithLocation && !selectedDriver) {
             setSelectedDriver(driverWithLocation);
           }
@@ -281,30 +375,7 @@ export function RealTimeTrackingPage() {
     }
   };
 
-  const getMarkerColor = (status: Driver["status"]) => {
-    switch (status) {
-      case "online":
-        return "#27AE60";
-      case "on_delivery":
-        return "#3498DB";
-      case "offline":
-        return "#95A5A6";
-      default:
-        return "#95A5A6";
-    }
-  };
 
-  const createColoredIcon = (color: string) => {
-    return new L.Icon({
-      iconUrl: markerIcon,
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowUrl: markerShadow,
-      shadowSize: [41, 41],
-      className: `marker-${color.replace('#', '')}`,
-    });
-  };
 
   const filteredDrivers = drivers.filter((driver) => {
     const matchesSearch = (driver.name ?? '')
@@ -358,7 +429,7 @@ export function RealTimeTrackingPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -418,24 +489,6 @@ export function RealTimeTrackingPage() {
               </div>
               <div className="w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
                 <TrendingUp className="w-6 h-6 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Geofence Zones
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {mockGeofences.filter((z) => z.active).length} Active
-                </h3>
-              </div>
-              <div className="w-12 h-12 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center">
-                <Circle className="w-6 h-6 text-orange-600" />
               </div>
             </div>
           </CardContent>
@@ -539,116 +592,95 @@ export function RealTimeTrackingPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Map Card */}
           <Card>
-            <CardContent className="p-0">
-              {/* Map with real driver locations */}
-              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-                <MapContainer 
-                  center={selectedDriver?.location ? [selectedDriver.location.lat, selectedDriver.location.lng] : [14.5995, 120.9842]} 
-                  zoom={13} 
-                  style={{ height: "400px", width: "100%" }}
-                >
-                  <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                  />
-                  
-                  <PanToSelectedDriver selectedDriver={selectedDriver} />
-                  
-                  {/* Render all drivers with locations */}
-                  {drivers.map((driver) => {
-                    if (!driver.location) return null;
-                    
-                    return (
-                      <Marker 
-                        key={driver.id}
-                        position={[driver.location.lat, driver.location.lng]} 
-                        icon={createColoredIcon(getMarkerColor(driver.status))}
-                      >
-                        <Popup>
-                          <div className="p-2">
-                            <h4 className="font-semibold">{driver.name}</h4>
-                            <p className="text-sm text-gray-600">Vehicle: {driver.vehicle_type}</p>
-                            <p className="text-sm text-gray-600">Status: {getStatusLabel(driver.status)}</p>
-                            {driver.plate_number && (
-                              <p className="text-sm text-gray-600">Plate: {driver.plate_number}</p>
-                            )}
-                            <p className="text-sm text-gray-600">Speed: {driver.speed} km/h</p>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    );
-                  })}
+  <CardContent className="p-0">
+    {/* Map with real driver locations */}
+    <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible">
+      <MapContainer
+        center={
+          selectedDriver?.location
+            ? [selectedDriver.location.lat, selectedDriver.location.lng]
+            : [14.5995, 120.9842]
+        }
+        zoom={13}
+        style={{ height: "400px", width: "100%" }}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
 
-                  {/* Render geofence zones */}
-                  {mockGeofences.filter(z => z.active).map((zone) => {
-                    if (zone.type === "circle" && zone.center && zone.radius) {
-                      return (
-                        <LeafletCircle
-                          key={zone.id}
-                          center={[zone.center.lat, zone.center.lng]}
-                          radius={zone.radius}
-                          pathOptions={{
-                            color: zone.color,
-                            fillColor: zone.color,
-                            fillOpacity: 0.2,
-                          }}
-                        >
-                          <Popup>
-                            <div className="p-2">
-                              <h4 className="font-semibold">{zone.name}</h4>
-                              <p className="text-sm text-gray-600">Radius: {zone.radius}m</p>
-                            </div>
-                          </Popup>
-                        </LeafletCircle>
-                      );
-                    }
-                    return null;
-                  })}
-                </MapContainer>
+        <PanToSelectedDriver selectedDriver={selectedDriver} role="driver" />
+        {/* Render all drivers with locations */}
+       {drivers.map((driver) => {
+  if (!driver.location) return null;
 
-                {/* Map Legend */}
-                <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 space-y-2">
-                  <h4 className="text-xs text-[#222B2D] dark:text-white">
-                    Legend
-                  </h4>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-[#27AE60]"></div>
-                      <span className="text-[#222B2D]/60 dark:text-white/60">
-                        Online
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-blue-600"></div>
-                      <span className="text-[#222B2D]/60 dark:text-white/60">
-                        On Delivery
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-gray-600"></div>
-                      <span className="text-[#222B2D]/60 dark:text-white/60">
-                        Offline
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full border-2 border-[#27AE60]"></div>
-                      <span className="text-[#222B2D]/60 dark:text-white/60">
-                        Geofence
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+  // Detect if we are watching this driver's playback
+  const isSelected = selectedDriver?.id === driver.id;
+  const isPlayingThisDriver = isPlaying && isSelected && locationHistory.length > 0;
+
+  // Pick marker position
+  const markerPos = isPlayingThisDriver
+    ? [
+        locationHistory[playbackIndex].location.lat,
+        locationHistory[playbackIndex].location.lng,
+      ]
+    : [driver.location.lat, driver.location.lng];
+
+  return (
+    <Marker key={driver.id} position={markerPos}>
+      <Popup>
+        <div className="p-2">
+          <h4 className="font-semibold">{driver.name}</h4>
+          <p className="text-sm text-gray-600">Vehicle: {driver.vehicle_type}</p>
+          <p className="text-sm text-gray-600">Status: {getStatusLabel(driver.status)}</p>
+
+          {driver.plate_number && (
+            <p className="text-sm text-gray-600">Plate: {driver.plate_number}</p>
+          )}
+
+          <p className="text-sm text-gray-600">
+            Speed:{" "}
+            {isPlayingThisDriver
+              ? locationHistory[playbackIndex]?.speed ?? driver.speed
+              : driver.speed}{" "}
+            km/h
+          </p>
+        </div>
+      </Popup>
+    </Marker>
+  );
+})}
+
+      </MapContainer>
+
+      {/* Legend */}
+      <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
+        <h4 className="font-semibold mb-2">Legend</h4>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#27AE60]"></div>
+            <span>Online</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-blue-600"></div>
+            <span>On Delivery</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-gray-600"></div>
+            <span>Offline</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </CardContent>
+</Card>
 
           {/* Driver Performance & History */}
           {selectedDriver && (
             <Tabs defaultValue="performance" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="performance">Performance</TabsTrigger>
                 <TabsTrigger value="history">Location History</TabsTrigger>
-                <TabsTrigger value="geofence">Geofencing</TabsTrigger>
               </TabsList>
 
               <TabsContent value="performance">
@@ -732,165 +764,119 @@ export function RealTimeTrackingPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
-
               <TabsContent value="history">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>Location History</span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setIsPlaying(!isPlaying)}
-                        >
-                          {isPlaying ? (
-                            <Pause className="w-4 h-4" />
-                          ) : (
-                            <Play className="w-4 h-4" />
-                          )}
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <SkipBack className="w-4 h-4" />
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <SkipForward className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Playback Speed */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label>Playback Speed</Label>
-                        <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                          {playbackSpeed[0]}x
-                        </span>
-                      </div>
-                      <Slider
-                        value={playbackSpeed}
-                        onValueChange={setPlaybackSpeed}
-                        min={0.5}
-                        max={4}
-                        step={0.5}
-                        className="w-full"
-                      />
-                    </div>
+  <Card>
+    <CardHeader>
+      <CardTitle className="flex items-center justify-between">
+        <span>Location History</span>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (selectedDriver?.location) {
+                log_location_history(selectedDriver.id, selectedDriver.location.lat, selectedDriver.location.lng);
+              }
+            }}
+          >
+            Log Current Location
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsPlaying(!isPlaying)}
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => {/* handle skip back */}}>
+            <SkipBack className="w-4 h-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => {/* handle skip forward */}}>
+            <SkipForward className="w-4 h-4" />
+          </Button>
+        </div>
+      </CardTitle>
+    </CardHeader>
+    <CardContent className="space-y-4">
+      
+      {/* Playback Speed */}
+<div className="space-y-2">
+  <div className="flex items-center justify-between">
+    <Label>Playback Speed</Label>
+    <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
+      {playbackSpeed[0]}x
+    </span>
+  </div>
 
-                    {/* Timeline */}
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                      {mockLocationHistory.map((entry, index) => (
-                        <div
-                          key={index}
-                          className="flex gap-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0"
-                        >
-                          <div className="flex-shrink-0 w-16 text-sm text-[#222B2D]/60 dark:text-white/60">
-                            {entry.timestamp}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <MapPin className="w-4 h-4 text-[#27AE60]" />
-                              <span className="text-sm text-[#222B2D] dark:text-white">
-                                Lat: {entry.location.lat.toFixed(4)}, Lng:{" "}
-                                {entry.location.lng.toFixed(4)}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-[#222B2D]/60 dark:text-white/60">
-                              <span className="flex items-center gap-1">
-                                <Navigation2 className="w-3 h-3" />
-                                {entry.speed} km/h
-                              </span>
-                              {entry.event && (
-                                <Badge variant="outline" className="text-xs">
-                                  {entry.event}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+  <Slider
+    value={playbackSpeed}
+    onValueChange={setPlaybackSpeed}
+    min={0.5}
+    max={4}
+    step={0.5}
+    className="w-full"
+  />
+</div>
 
-                    {/* Date Filter */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <Label className="mb-2 block">Filter by Date Range</Label>
-                      <div className="flex gap-2">
-                        <Input type="date" className="flex-1" />
-                        <span className="flex items-center text-[#222B2D]/60 dark:text-white/60">
-                          to
-                        </span>
-                        <Input type="date" className="flex-1" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+{/* Playback Scrubber */}
+<Slider
+  value={[playbackIndex]}
+  min={0}
+  max={locationHistory.length - 1}
+  step={1}
+  onValueChange={(val) => {
+    setPlaybackIndex(val[0]);
+  }}
+  className="w-full"
+/>
 
-              <TabsContent value="geofence">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>Geofence Zones</span>
-                      <Button size="sm">Add Zone</Button>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Geofence List */}
-                    <div className="space-y-3">
-                      {mockGeofences.map((zone) => (
-                        <div
-                          key={zone.id}
-                          className="p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 hover:border-[#27AE60] transition-colors"
-                        >
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex items-center gap-3">
-                              <div
-                                className="w-4 h-4 rounded-full"
-                                style={{ backgroundColor: zone.color }}
-                              ></div>
-                              <div>
-                                <h4 className="text-[#222B2D] dark:text-white">
-                                  {zone.name}
-                                </h4>
-                                <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                                  {zone.type === "circle"
-                                    ? `Radius: ${zone.radius}m`
-                                    : "Polygon"}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge
-                              className={
-                                zone.active
-                                  ? "bg-[#27AE60] text-white"
-                                  : "bg-gray-400 text-white"
-                              }
-                            >
-                              {zone.active ? "Active" : "Inactive"}
-                            </Badge>
-                          </div>
-                          {zone.center && (
-                            <div className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                              Center: {zone.center.lat.toFixed(4)},{" "}
-                              {zone.center.lng.toFixed(4)}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+{/* Timeline */}
+<div className="space-y-3 max-h-[400px] overflow-y-auto">
+  {locationHistory.map((entry, index) => (
+    <div
+      key={index}
+      className="flex gap-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0"
+    >
+      <div className="flex-shrink-0 w-28 text-sm text-[#222B2D]/60 dark:text-white/60">
+        {new Date(entry.recorded_at).toLocaleString()}
+      </div>
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <MapPin className="w-4 h-4 text-[#27AE60]" />
+          <span className="text-sm text-[#222B2D] dark:text-white">
+            Lat: {entry.location.lat.toFixed(4)}, Lng:{" "}
+            {entry.location.lng.toFixed(4)}
+          </span>
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
 
-                    {/* Add New Geofence */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                        Draw geofence zones on the map to receive alerts when
-                        drivers enter or exit specific areas. Configure triggers
-                        for automated notifications via Supabase Realtime.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+
+      {/* Date Filter */}
+      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+        <Label className="mb-2 block">Filter by Date Range</Label>
+        <div className="flex gap-2">
+          <Input
+            type="date"
+            className="flex-1"
+            onChange={(e) => setFilterStartDate(e.target.value)}
+          />
+          <span className="flex items-center text-[#222B2D]/60 dark:text-white/60">
+            to
+          </span>
+          <Input
+            type="date"
+            className="flex-1"
+            onChange={(e) => setFilterEndDate(e.target.value)}
+          />
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+</TabsContent>
+
             </Tabs>
           )}
         </div>

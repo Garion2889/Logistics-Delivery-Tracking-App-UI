@@ -39,7 +39,10 @@ import {
   TableHeader,
   TableRow,
 } from "./ui/table";
-import { Calendar } from "./ui/calendar";
+import { Calendar as ReactCalendar } from "react-calendar";
+export { ReactCalendar as Calendar };
+import "react-calendar/dist/Calendar.css";
+import { Calendar } from "react-calendar";
 
 // ------------------ Types ------------------
 
@@ -163,6 +166,7 @@ export function RouteOptimizationPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
+  
 
   // real drivers for availability/map
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -777,16 +781,15 @@ useEffect(() => {
               <CardHeader>
                 <CardTitle>Schedule Calendar</CardTitle>
               </CardHeader>
-              <CardContent>
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={setDate}
-                  className="rounded-md border bg-white dark:bg-gray-800 dark:text-white"
-                />
-              </CardContent>
-            </Card>
-
+              <CardContent className="p-4">
+        <Calendar
+          onChange={setDate}
+          value={date}
+          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          // mode="single" is default in react-calendar
+        />
+      </CardContent>
+    </Card>
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
