@@ -411,18 +411,12 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
       <DeactivatedDriversModal
         isOpen={isDeactivatedModalOpen}
         onClose={() => setIsDeactivatedModalOpen(false)}
-        drivers={deactivatedDrivers.map((driver) => ({
-          id: driver.id,
-          name: driver.name,
-          email: driver.email,
-          phone: driver.phone,
-          vehicle: driver.vehicle,
-          license: driver.license,
-          rating: driver.rating,
-          completedDeliveries: driver.completedDeliveries,
+        drivers={deactivatedDrivers.map((driver: Driver) => ({
+          ...driver,
           deactivatedAt: driver.deactivatedAt || new Date().toISOString(),
           reason: driver.deactivationReason,
-        }))}
+          }))}
+
         isDarkMode={isDarkMode}
         onReactivate={handleReactivate}
       />
