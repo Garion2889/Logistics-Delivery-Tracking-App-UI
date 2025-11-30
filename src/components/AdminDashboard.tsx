@@ -286,7 +286,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
                 icon={getDriverIcon(drivers[driver.driver_id] || {})}
               >
                 <Popup>
-                  <b>Driver:</b> {driver.driver_id} <br />
+                  <b>Driver:</b>  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
                   <b>Last update:</b> {new Date(driver.recorded_at).toLocaleTimeString()}
                 </Popup>
               </Marker>
