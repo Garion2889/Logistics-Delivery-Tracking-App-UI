@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "../utils/supabase/client";
 
 interface GPSCoords {
@@ -16,33 +16,22 @@ interface GPSCoords {
  */
 export function useGPSUploader(fallbackCoords?: GPSCoords) {
   const [driverId, setDriverId] = useState<string>("");
+  const lastUpdateRef = useRef<number>(0); // timestamp of last GPS update
 
   // Step 1: fetch driver UUID for logged-in user
   useEffect(() => {
     const fetchDriverId = async () => {
       const { data: authUserData } = await supabase.auth.getUser();
       const userId = authUserData?.user?.id;
-      if (!userId) {
-        console.warn("No authenticated user found");
-        return;
-      }
+      if (!userId) return;
 
       const { data: driver, error } = await supabase
         .from("drivers")
         .select("id")
-        .eq("user_id", userId) // link from users table
+        .eq("user_id", userId)
         .single();
 
-      if (error) {
-        console.error("Failed to fetch driver UUID:", error);
-        return;
-      }
-
-      if (!driver?.id) {
-        console.error("Driver record not found for user:", userId);
-        return;
-      }
-
+      if (error || !driver?.id) return;
       setDriverId(driver.id);
     };
 
@@ -56,6 +45,10 @@ export function useGPSUploader(fallbackCoords?: GPSCoords) {
     let watchId: number | null = null;
 
     const sendLocation = async (coords: GPSCoords) => {
+      const now = Date.now();
+      if (now - lastUpdateRef.current < 5000) return; // throttle: 5 seconds
+      lastUpdateRef.current = now;
+
       const { latitude, longitude, accuracy, speed, heading, altitude } = coords;
       if (!latitude || !longitude) return;
 
@@ -78,13 +71,11 @@ export function useGPSUploader(fallbackCoords?: GPSCoords) {
         window.location.protocol === "https:" || window.location.hostname === "localhost";
 
       if (!navigator.geolocation) {
-        console.warn("Geolocation not supported. Using fallback coords if available.");
         if (fallbackCoords) await sendLocation(fallbackCoords);
         return;
       }
 
       if (!isSecureOrigin) {
-        console.warn("Geolocation requires HTTPS. Using fallback coords if available.");
         if (fallbackCoords) await sendLocation(fallbackCoords);
         return;
       }
@@ -97,7 +88,6 @@ export function useGPSUploader(fallbackCoords?: GPSCoords) {
         async (err) => {
           console.error("GPS error:", err);
           if ((err.code === 2 || err.code === 3) && fallbackCoords) {
-            console.warn("Using fallback coordinates due to GPS error.");
             await sendLocation(fallbackCoords);
           }
         },
