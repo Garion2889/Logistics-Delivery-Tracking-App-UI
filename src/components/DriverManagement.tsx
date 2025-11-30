@@ -132,12 +132,20 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   });
 
  const handleAddDriver = async (driverData: any) => {
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth?.user?.id;
+
+  if (!userId) {
+    toast.error("No authenticated user found");
+    return;
+  }
+
   const { data, error } = await supabase
     .from("drivers")
     .insert([
       {
+        user_id: userId,
         name: driverData.name,
-        user_id: driverData.user_id,  // if used
         vehicle_type: driverData.vehicle,
         plate_number: null,
         license_number: null,
@@ -145,7 +153,6 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
       },
     ])
     .select();
-
 
   if (error) {
     console.error("Insert error:", error);
@@ -157,6 +164,7 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   setIsAddModalOpen(false);
   toast.success(`${driverData.name} has been added successfully`);
 };
+
 
 
   const handleDeactivate = (driverId: string) => {
