@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Package, Truck, CheckCircle2, RotateCcw } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
@@ -29,10 +29,60 @@ interface LiveDriverLocation {
   longitude: number;
   recorded_at: string;
 }
+interface Driver {
+  id?: string;
+  name?: string;
+}
+
+const stringToColor = (str?: string) => {
+  if (!str) return "#888"; // fallback color for missing names
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return `hsl(${hash % 360}, 70%, 50%)`;
+};
+
+const getDriverIcon = (driver: { name?: string }) => {
+  const firstLetter = driver.name?.charAt(0).toUpperCase() ?? "?";
+  const color = stringToColor(driver.name);
+
+  return L.divIcon({
+    className: "driver-icon",
+    html: `<div class="driver-icon-wrapper" style="background-color: ${color};">
+             ${firstLetter}
+           </div>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -35],
+  });
+};
+
+
 
 export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<LiveDriverLocation | null>(null);
+  const [drivers, setDrivers] = useState<Record<string, Driver>>({});
+
+  // Fetch driver info for name initials in markers 
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from("drivers").select("id, name");
+      if (error) {
+        console.error("Failed to fetch drivers:", error);
+        return;
+      }
+
+      const driverMap: Record<string, Driver> = {};
+    data.forEach((driver: any) => {
+      driverMap[driver.id] = { id: driver.id, name: driver.name };
+    });
+
+    setDrivers(driverMap);
+    })();
+  }
+  , []);
 
   // Subscribe to real-time driver GPS updates
   useEffect(() => {
@@ -233,7 +283,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
               <Marker
                 key={driver.driver_id}
                 position={[driver.latitude, driver.longitude]}
-                icon={defaultIcon}
+                icon={getDriverIcon(drivers[driver.driver_id] || {})}
               >
                 <Popup>
                   <b>Driver:</b> {driver.driver_id} <br />
