@@ -50,24 +50,44 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
     
-    useEffect(() => {
-    const fetchDrivers = async () => {
-      const { data, error } = await supabase
-        .from("drivers")
-        .select("*")
-        .order("id", { ascending: true });
+   useEffect(() => {
+  const fetchDrivers = async () => {
+    const { data, error } = await supabase
+      .from("drivers")
+      .select("*")
+      .order("id", { ascending: true });
 
-      if (error) {
-        console.error("Error fetching drivers:", error);
-        toast.error("Failed to load drivers");
-        return;
-      }
+    if (error) {
+      console.error("Error fetching drivers:", error);
+      toast.error("Failed to load drivers");
+      return;
+    }
 
-      setDrivers(data);
-    };
+    if (!data) return;
 
-    fetchDrivers();
-  },[]);
+    const normalized = data.map((d: any) => ({
+      id: d.id,
+      name: d.full_name ?? "",
+      email: d.email ?? "",
+      phone: d.phone ?? "",
+      status: d.status ?? "inactive",
+      rating: d.rating ?? 0,
+      completedDeliveries: d.completedDeliveries ?? 0,
+      vehicle: d.vehicle ?? "",
+      license: d.license ?? "",
+      avatar: d.avatar ?? "",
+      isDeactivated: d.isDeactivated ?? false,
+      deactivatedAt: d.deactivatedAt ?? "",
+      deactivationReason: d.deactivationReason ?? "",
+    }));
+
+    setDrivers(normalized);
+  };
+
+  fetchDrivers();
+}, []);
+
+
   // Filter active drivers (not deactivated)
   const activeDrivers = drivers.filter((driver: Driver) => !driver.isDeactivated);
 
@@ -120,28 +140,29 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   };
 
   const confirmDeactivation = () => {
-    if (!confirmingDeactivate) return;
+  if (!confirmingDeactivate) return;
 
-    const driver = drivers.find((driver: Driver) => driver.id === confirmingDeactivate);
-    if (!driver) return;
+  setDrivers(
+    drivers.map((driver: Driver) =>
+      driver.id === confirmingDeactivate
+        ? {
+            ...driver,
+            isDeactivated: true,
+            deactivatedAt: new Date().toISOString(),
+            deactivationReason:
+              deactivationReason || "Account deactivated by admin",
+          }
+        : driver
+    )
+  );
 
-    setDrivers(
-      drivers.map((driver: Driver) =>
-        driver.id === confirmingDeactivate
-          ? {
-              ...driver,
-              isDeactivated: true,
-              deactivatedAt: new Date().toISOString(),
-              deactivationReason: deactivationReason || "Account deactivated by admin",
-            }
-          : driver
-      )
-    );
+  const driver = drivers.find((d) => d.id === confirmingDeactivate);
+  toast.success(`${driver?.name}'s account has been deactivated`);
 
-    toast.success(`${driver.name}'s account has been deactivated`);
-    setConfirmingDeactivate(null);
-    setDeactivationReason("");
-  };
+  setConfirmingDeactivate(null);
+  setDeactivationReason("");
+};
+
 
   const cancelDeactivation = () => {
     setConfirmingDeactivate(null);

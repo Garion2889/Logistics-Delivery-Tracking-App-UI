@@ -79,7 +79,7 @@ export function DriverCard({
               <div className="flex items-center gap-1 mt-0.5">
                 <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                 <span className="text-xs font-medium text-[#222B2D] dark:text-white">
-                  {(driver.rating ?? 0).toFixed(1)}
+                  {driver.rating.toFixed(1)}
                 </span>
               </div>
             </div>
