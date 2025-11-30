@@ -32,34 +32,43 @@ export function DriverCard({
   isDarkMode = false,
 }: DriverCardProps) {
   const getStatusBadge = () => {
-    const statusConfig = {
-      active: {
-        label: "Active",
-        className:
-          "bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
-      },
-      inactive: {
-        label: "Inactive",
-        className:
-          "bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700",
-      },
-      "on-break": {
-        label: "On Break",
-        className:
-          "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800",
-      },
-    };
-
-    const config = statusConfig[driver.status];
-    return (
-      <Badge
-        variant="outline"
-        className={`text-xs font-medium ${config.className}`}
-      >
-        {config.label}
-      </Badge>
-    );
+  const statusConfig: Record<string, { label: string; className: string }> = {
+    active: {
+      label: "Active",
+      className:
+        "bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
+    },
+    inactive: {
+      label: "Inactive",
+      className:
+        "bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700",
+    },
+    "on-break": {
+      label: "On Break",
+      className:
+        "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800",
+    },
+    online: {
+      label: "Online",
+      className:
+        "bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800",
+    },
+    offline: {
+      label: "Offline",
+      className:
+        "bg-gray-100 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700",
+    },
   };
+
+  const config = statusConfig[driver.status] ?? statusConfig["inactive"];
+
+  return (
+    <Badge variant="outline" className={`text-xs font-medium ${config.className}`}>
+      {config.label}
+    </Badge>
+  );
+};
+
 
   return (
     <Card className="bg-white dark:bg-[#1a2123] border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow">
