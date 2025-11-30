@@ -25,7 +25,6 @@ import {
   SkipBack,
   SkipForward,
   Search,
-
   Users,
   TrendingUp,
   Navigation2,
@@ -205,6 +204,31 @@ useEffect(() => {
   return () => clearInterval(interval); // cleanup
 }, []); // empty dependency array → runs once and keeps interval
 
+// Simple hash function to turn a string into a color
+const stringToColor = (str) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const color = `hsl(${hash % 360}, 70%, 50%)`; // HSL gives nice distinct colors
+  return color;
+};
+const getDriverIcon = (driver) => {
+  const firstLetter = driver.name?.charAt(0)?.toUpperCase() ?? "?";
+  const color = stringToColor(driver.name); // generate unique color
+
+  return L.divIcon({
+    className: "driver-icon",
+    html: `
+      <div class="driver-icon-wrapper" style="background-color: ${color}">
+        ${firstLetter}
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -35],
+  });
+};
 
 
 //To display location history
@@ -634,7 +658,7 @@ useEffect(() => {
     : [driver.location.lat, driver.location.lng];
 
   return (
-    <Marker key={driver.id} position={markerPos} icon={defaultIcon}>
+    <Marker key={driver.id} position={markerPos} icon={getDriverIcon(driver)}>
       <Popup>
         <div className="p-2">
           <h4 className="font-semibold">{driver.name}</h4>

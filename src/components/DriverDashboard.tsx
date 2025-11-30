@@ -262,7 +262,7 @@ export function DriverDashboard({
                       attribution="© OpenStreetMap contributors"
                     />
 
-                    <PanToSelectedDriver selectedDriver={selectedDriverForPan} />
+                    <PanToSelectedDriver selectedDriver={selectedDriverForPan} role = "driver"/>
 
                     {driverLocation && (
                       <Marker position={driverLocation} icon={defaultIcon}>
