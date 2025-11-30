@@ -42,16 +42,30 @@ interface Delivery {
   }[];
 }
 
-interface Driver {
+export interface Driver {
   id: string;
+  user_id: string;
   name: string;
   email: string;
   phone: string;
-  vehicle: string;
   status: "online" | "offline";
-  location?: { lat: number; lng: number };
-  activeDeliveries: number;
+  vehicle_type: "Motorcycle" | "Car" | "Van" | "Truck";
+  plate_number?: string;
+  license_number?: string;
+  last_lat?: number;
+  last_lng?: number;
+  last_location_update?: string;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string
+  rating?: number;
+  completedDeliveries?: number;
+  avatar?: string;
+  isDeactivated?: boolean;
+  deactivationReason?: string;
+  deactivatedAt?: string;
 }
+
 
 // ------------------ App Component ------------------
 
@@ -146,21 +160,21 @@ export default function App() {
   const handleUploadPOD = (deliveryId: string) => toast.success("Proof of delivery uploaded successfully");
 
   const handleCreateDriver = async (driverData: {
-    full_name: string;
-    email: string;
-    password: string;
-    phone: string;
-    vehicle: string;
-    }): Promise<void> => {
-    try {
+  full_name: string;
+  email: string;
+  password: string;
+  phone: string;
+  vehicle: string;
+}): Promise<void> => {
+  try {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-driver`;
+
     console.log("Calling Edge Function:", url);
 
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // send anon key as Bearer, function expects Authorization
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
@@ -168,41 +182,58 @@ export default function App() {
         email: driverData.email,
         password: driverData.password,
         phone: driverData.phone,
-        vehicle_type: driverData.vehicle.toLowerCase(), // "motorcycle" | "car" | "van" | "truck"
+        vehicle_type: driverData.vehicle, // e.g. "Motorcycle"
       }),
     });
 
-    console.log("Edge function raw status:", res.status);
+    console.log("Status:", res.status);
     const data = await res.json().catch(() => null);
-    console.log("Edge function response body:", data);
+    console.log("Response:", data);
 
     if (!res.ok || !data || data.error) {
-      const message =
-        data?.error ||
-        data?.dbError ||
-        data?.details ||
-        `HTTP ${res.status}`;
-      throw new Error(message);
+      throw new Error(
+        data?.error || data?.details || `HTTP ${res.status}`
+      );
     }
 
-    // Map response into your Driver type
+    // Create frontend driver object
     const newDriver: Driver = {
-      id: data.driver.id,
-      name: data.user.full_name,
-      email: data.user.email,
-      phone: data.user.phone,
-      vehicle: data.driver.vehicle_type,
-      status: data.driver.status ?? "offline",
-      activeDeliveries: 0,
-    };
+  id: data.driver.id,
+  user_id: data.driver.user_id,
+
+  name: data.user.full_name,
+  email: data.user.email,
+  phone: data.user.phone,
+
+  status: data.driver.status ?? "offline",
+  vehicle_type: data.driver.vehicle_type,
+
+  plate_number: data.driver.plate_number ?? "",
+  license_number: data.driver.license_number ?? "",
+
+  last_lat: data.driver.last_lat ?? null,
+  last_lng: data.driver.last_lng ?? null,
+  last_location_update: data.driver.last_location_update ?? null,
+
+  is_active: data.driver.is_active,
+
+  created_at: data.driver.created_at,
+  updated_at: data.driver.updated_at,
+
+  rating: 0,
+  completedDeliveries: 0,
+};
+
 
     setDrivers((prev) => [newDriver, ...prev]);
+
     toast.success(`Driver ${driverData.full_name} created successfully`);
   } catch (err: any) {
     console.error("handleCreateDriver exception:", err);
     toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
   }
-  };
+};
+
 
 
 
