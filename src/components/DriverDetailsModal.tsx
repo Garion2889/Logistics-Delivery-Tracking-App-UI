@@ -112,7 +112,7 @@ export function DriverDetailsModal({
                     <div className="flex items-center gap-1 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-0.5 rounded">
                       <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                       <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">
-                        {driver.rating.toFixed(1)}
+                        (driver.rating ?? 0).toFixed(1)
                       </span>
                     </div>
                   </div>
@@ -196,7 +196,7 @@ export function DriverDetailsModal({
                   <div>
                     <p className="text-[10px] text-gray-500 dark:text-gray-400">Rating</p>
                     <p className="text-sm font-semibold text-[#222B2D] dark:text-white leading-tight">
-                      {driver.rating.toFixed(1)}
+                      {(driver.rating ?? 0).toFixed(1)}
                     </p>
                   </div>
                 </div>
