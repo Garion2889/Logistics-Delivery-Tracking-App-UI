@@ -198,44 +198,35 @@ export default function App() {
 
     // Create frontend driver object
     const newDriver: Driver = {
-  id: data.driver.id,
-  user_id: data.driver.user_id,
-
-  name: data.user.full_name,
-  email: data.user.email,
-  phone: data.user.phone,
-
-  status: data.driver.status ?? "offline",
-  vehicle_type: data.driver.vehicle_type,
-
-  plate_number: data.driver.plate_number ?? "",
-  license_number: data.driver.license_number ?? "",
-
-  last_lat: data.driver.last_lat ?? null,
-  last_lng: data.driver.last_lng ?? null,
-  last_location_update: data.driver.last_location_update ?? null,
-
-  is_active: data.driver.is_active,
-
-  created_at: data.driver.created_at,
-  updated_at: data.driver.updated_at,
-
-  rating: 0,
-  completedDeliveries: 0,
-};
-
-
+      id: data.driver.id,
+      user_id: data.driver.user_id,
+      name: data.user.full_name,
+      email: data.user.email,
+      phone: data.user.phone,
+      status: data.driver.status ?? "offline",
+      vehicle_type: data.driver.vehicle_type,
+      plate_number: data.driver.plate_number ?? "",
+      license_number: data.driver.license_number ?? "",
+      last_lat: data.driver.last_lat ?? null,
+      last_lng: data.driver.last_lng ?? null,
+      last_location_update: data.driver.last_location_update ?? null,
+      is_active: data.driver.is_active ?? true,
+      created_at: data.driver.created_at,
+      updated_at: data.driver.updated_at,
+      rating: 0,
+      completedDeliveries: 0,
+      avatar: "",
+      isDeactivated: false,
+      deactivationReason: "",
+      deactivatedAt: "",
+    };
     setDrivers((prev) => [newDriver, ...prev]);
-
     toast.success(`Driver ${driverData.full_name} created successfully`);
   } catch (err: any) {
     console.error("handleCreateDriver exception:", err);
     toast.error(`Failed to create driver: ${err.message ?? "Unknown error"}`);
   }
 };
-
-
-
 
 // App.tsx or wherever onUpdate lives
 const handleUpdateDriver = async (
