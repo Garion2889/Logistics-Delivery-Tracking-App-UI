@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";;
 import { Plus, Search, UserX, AlertCircle, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -16,6 +16,7 @@ import { DeactivatedDriversModal } from "./DeactivatedDriversModal";
 import { DriverDetailsModal } from "./DriverDetailsModal";
 import { EditDriverModal } from "./EditDriverModal";
 import { toast } from "sonner";
+import { supabase } from "../lib/supabase";
 
 interface Driver {
   id: string;
@@ -47,50 +48,34 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   const [deactivationReason, setDeactivationReason] = useState("");
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
-  const [drivers, setDrivers] = useState<Driver[]>([
-    {
-      id: "1",
-      name: "John Driver",
-      email: "john.driver15@example.com",
-      phone: "(123) 456-7890",
-      status: "active",
-      rating: 4.8,
-      completedDeliveries: 234,
-      vehicle: "Toyota Camry 2020",
-      license: "DL-12345",
-    },
-    {
-      id: "2",
-      name: "Bulma",
-      email: "bulma@gmail.com",
-      phone: "+0 (947) 982-6331",
-      status: "inactive",
-      rating: 4.5,
-      completedDeliveries: 156,
-      vehicle: "Honda Civic 2019",
-      license: "DL-67890",
-    },
-    {
-      id: "3",
-      name: "Gohan",
-      email: "gohan@gmail.com",
-      phone: "(555) 123-4567",
-      status: "on-break",
-      rating: 4.9,
-      completedDeliveries: 389,
-      vehicle: "Ford Transit 2021",
-      license: "DL-11111",
-    },
-  ]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+    
+    useEffect(() => {
+    const fetchDrivers = async () => {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("*")
+        .order("id", { ascending: true });
 
+      if (error) {
+        console.error("Error fetching drivers:", error);
+        toast.error("Failed to load drivers");
+        return;
+      }
+
+      setDrivers(data);
+    };
+
+    fetchDrivers();
+  },[]);
   // Filter active drivers (not deactivated)
-  const activeDrivers = drivers.filter((driver) => !driver.isDeactivated);
+  const activeDrivers = drivers.filter((driver: Driver) => !driver.isDeactivated);
 
   // Get deactivated drivers
-  const deactivatedDrivers = drivers.filter((driver) => driver.isDeactivated);
+  const deactivatedDrivers = drivers.filter((driver: Driver) => driver.isDeactivated);
 
   // Apply filters to active drivers only
-  const filteredDrivers = activeDrivers.filter((driver) => {
+  const filteredDrivers = activeDrivers.filter((driver: Driver) => {
     const matchesSearch =
       driver.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       driver.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -101,20 +86,33 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
     return matchesSearch && matchesStatus;
   });
 
-  const handleAddDriver = (driverData: any) => {
-    const newDriver: Driver = {
-      id: Date.now().toString(),
-      ...driverData,
-      rating: 0,
-      completedDeliveries: 0,
-      status: "inactive" as const,
-      isDeactivated: false,
-    };
+ const handleAddDriver = async (driverData: any) => {
+  const { data, error } = await supabase
+    .from("drivers")
+    .insert([
+      {
+        full_name: driverData.name,
+        email: driverData.email,
+        phone: driverData.phone,
+        vehicle: driverData.vehicle,
+        status: "inactive",
+        rating: 0,
+        completedDeliveries: 0,
+        isDeactivated: false,
+      },
+    ]);
 
-    setDrivers([...drivers, newDriver]);
-    setIsAddModalOpen(false);
-    toast.success(`${driverData.name} has been added successfully`);
-  };
+  if (error) {
+    console.error("Insert error:", error);
+    toast.error("Failed to add driver");
+    return;
+  }
+
+  setDrivers((prev) => [...prev, data[0]]);
+  setIsAddModalOpen(false);
+  toast.success(`${driverData.name} has been added successfully`);
+};
+
 
   const handleDeactivate = (driverId: string) => {
     setConfirmingDeactivate(driverId);
@@ -124,19 +122,19 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   const confirmDeactivation = () => {
     if (!confirmingDeactivate) return;
 
-    const driver = drivers.find((d) => d.id === confirmingDeactivate);
+    const driver = drivers.find((driver: Driver) => driver.id === confirmingDeactivate);
     if (!driver) return;
 
     setDrivers(
-      drivers.map((d) =>
-        d.id === confirmingDeactivate
+      drivers.map((driver: Driver) =>
+        driver.id === confirmingDeactivate
           ? {
-              ...d,
+              ...driver,
               isDeactivated: true,
               deactivatedAt: new Date().toISOString(),
               deactivationReason: deactivationReason || "Account deactivated by admin",
             }
-          : d
+          : driver
       )
     );
 
@@ -151,25 +149,25 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   };
 
   const handleReactivate = async (driverId: string) => {
-    const driver = drivers.find((d) => d.id === driverId);
+    const driver = drivers.find((driver: Driver) => driver.id === driverId);
     if (!driver) throw new Error("Driver not found");
 
     setDrivers(
-      drivers.map((d) =>
-        d.id === driverId
+      drivers.map((driver: Driver) =>
+        driver.id === driverId
           ? {
-              ...d,
+              ...driver,
               isDeactivated: false,
               deactivatedAt: undefined,
               deactivationReason: undefined,
             }
-          : d
+          : driver
       )
     );
   };
 
   const handleViewDetails = (driverId: string) => {
-    const driver = drivers.find((d) => d.id === driverId);
+    const driver = drivers.find((driver: Driver) => driver.id === driverId);
     if (driver) {
       setSelectedDriver(driver);
       setIsDetailsModalOpen(true);
@@ -177,7 +175,7 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   };
 
   const handleEditDriver = (driverId: string) => {
-    const driver = drivers.find((d) => d.id === driverId);
+    const driver = drivers.find((driver: Driver) => driver.id === driverId);
     if (driver) {
       setSelectedDriver(driver);
       setIsEditModalOpen(true);
@@ -186,8 +184,8 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
 
   const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
     setDrivers(
-      drivers.map((d) =>
-        d.id === driverId ? { ...d, ...updates } : d
+      drivers.map((driver: Driver) =>
+        driver.id === driverId ? { ...driver, ...updates } : driver
       )
     );
     toast.success("Driver updated successfully");
