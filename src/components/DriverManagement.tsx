@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";;
+import { useState } from "react";
 import { Plus, Search, UserX, AlertCircle, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -36,6 +36,11 @@ interface Driver {
 
 interface DriverManagementProps {
   isDarkMode?: boolean;
+  drivers: Driver[];
+  onEditDriver: (driverId: string, updates: Partial<Driver>) => void;
+  onDeactivateDriver: (driverId: string) => void;
+  onShowCreateDriverModal: () => void;
+  onShowEditDriverModal: (driver: Driver) => void;
 }
 
 export function DriverManagement({ isDarkMode = false }: DriverManagementProps) {
@@ -50,42 +55,7 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
     
-   useEffect(() => {
-  const fetchDrivers = async () => {
-    const { data, error } = await supabase
-      .from("drivers")
-      .select("*")
-      .order("id", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching drivers:", error);
-      toast.error("Failed to load drivers");
-      return;
-    }
-
-    if (!data) return;
-
-    const normalized = data.map((d: any) => ({
-      id: d.id,
-      name: d.full_name ?? "",
-      email: d.email ?? "",
-      phone: d.phone ?? "",
-      status: d.status ?? "inactive",
-      rating: d.rating ?? 0,
-      completedDeliveries: d.completedDeliveries ?? 0,
-      vehicle: d.vehicle ?? "",
-      license: d.license ?? "",
-      avatar: d.avatar ?? "",
-      isDeactivated: d.isDeactivated ?? false,
-      deactivatedAt: d.deactivatedAt ?? "",
-      deactivationReason: d.deactivationReason ?? "",
-    }));
-
-    setDrivers(normalized);
-  };
-
-  fetchDrivers();
-}, []);
 
 
   // Filter active drivers (not deactivated)
