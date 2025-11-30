@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect} from "react";
 import { Plus, Search, UserX, AlertCircle, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -20,25 +20,34 @@ import { supabase } from "../lib/supabase";
 
 interface Driver {
   id: string;
-  name: string;
-  email: string;
-  phone: string;
-  status: "active" | "inactive" | "on-break";
-  rating: number;
-  completedDeliveries: number;
+  user_id: string;
+  name: string;      
+  email: string;     
+  phone: string;     
+  status: "online" | "offline";
+  vehicle_type: "Motorcycle" | "Car" | "Van" | "Truck";
+  plate_number?: string;
+  license_number?: string;
+  last_lat?: number;
+  last_lng?: number;
+  last_location_update?: string;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  rating?: number;
+  completedDeliveries?: number;
   avatar?: string;
-  vehicle?: string;
-  license?: string;
   isDeactivated?: boolean;
-  deactivatedAt?: string;
   deactivationReason?: string;
+  deactivatedAt?: string;
 }
+
 
 interface DriverManagementProps {
   isDarkMode?: boolean;
   drivers: Driver[];
-  onEditDriver: (driverId: string, updates: Partial<Driver>) => void;
-  onDeactivateDriver: (driverId: string) => void;
+  onEditDriver: (driverId: string, userId: string, updates: Partial<Driver>) => Promise<void>;
+  onDeactivateDriver: (driverId: string) => Promise<void>;
   onShowCreateDriverModal: () => void;
   onShowEditDriverModal: (driver: Driver) => void;
 }
@@ -56,16 +65,62 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   const [drivers, setDrivers] = useState<Driver[]>([]);
     
 
+  useEffect(() => {
+  const fetchDrivers = async () => {
+    const { data, error } = await supabase
+  .from("drivers")
+  .select(`
+    *,
+    users:user_id (
+      email,
+      phone,
+      full_name
+    )
+  `)
+  .order("created_at", { ascending: true });
 
+
+    if (error) {
+      console.error("Error fetching drivers:", error);
+      toast.error("Failed to load drivers");
+      return;
+    }
+
+    if (!data) return;
+
+    // Normalize fields so DriverCard never crashes
+  if (data) {
+    const normalized = data.map((d: any) => ({
+      id: d.id,
+      name: d.users?.full_name ?? d.name ?? "Unnamed Driver",
+      email: d.users?.email ?? "",
+      phone: d.users?.phone ?? "",
+      status: d.status ?? "offline",
+      rating: 0, // your DB doesn't have rating
+      completedDeliveries: 0, // your DB doesn't have this
+      vehicle: d.vehicle_type ?? "",
+      license: d.license_number ?? "",
+      avatar: "",
+      isDeactivated: d.is_active === false,
+      deactivatedAt: null,
+      deactivationReason: null,
+    }));
+
+  setDrivers(normalized);
+  }
+  };
+
+  fetchDrivers();
+  }, []);
 
   // Filter active drivers (not deactivated)
-  const activeDrivers = drivers.filter((driver: Driver) => !driver.isDeactivated);
+  const activeDrivers = drivers.filter((driver) => !driver.isDeactivated);
 
   // Get deactivated drivers
-  const deactivatedDrivers = drivers.filter((driver: Driver) => driver.isDeactivated);
+  const deactivatedDrivers = drivers.filter((driver) => driver.isDeactivated);
 
   // Apply filters to active drivers only
-  const filteredDrivers = activeDrivers.filter((driver: Driver) => {
+  const filteredDrivers = activeDrivers.filter((driver) => {
     const matchesSearch =
       driver.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       driver.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -113,16 +168,16 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   if (!confirmingDeactivate) return;
 
   setDrivers(
-    drivers.map((driver: Driver) =>
-      driver.id === confirmingDeactivate
+    drivers.map((d) =>
+      d.id === confirmingDeactivate
         ? {
-            ...driver,
+            ...d,
             isDeactivated: true,
             deactivatedAt: new Date().toISOString(),
             deactivationReason:
               deactivationReason || "Account deactivated by admin",
           }
-        : driver
+        : d
     )
   );
 
@@ -140,43 +195,45 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   };
 
   const handleReactivate = async (driverId: string) => {
-    const driver = drivers.find((driver: Driver) => driver.id === driverId);
+    const driver = drivers.find((d) => d.id === driverId);
     if (!driver) throw new Error("Driver not found");
 
     setDrivers(
-      drivers.map((driver: Driver) =>
-        driver.id === driverId
+      drivers.map((d) =>
+        d.id === driverId
           ? {
-              ...driver,
+              ...d,
               isDeactivated: false,
               deactivatedAt: undefined,
               deactivationReason: undefined,
             }
-          : driver
+          : d
       )
     );
   };
 
   const handleViewDetails = (driverId: string) => {
-    const driver = drivers.find((driver: Driver) => driver.id === driverId);
-    if (driver) {
-      setSelectedDriver(driver);
-      setIsDetailsModalOpen(true);
-    }
+  const driver = drivers.find((d) => d.id === driverId);
+  if (driver) {
+    setSelectedDriver(driver);
+    setIsDetailsModalOpen(true);
+  }
   };
 
   const handleEditDriver = (driverId: string) => {
-    const driver = drivers.find((driver: Driver) => driver.id === driverId);
-    if (driver) {
-      setSelectedDriver(driver);
-      setIsEditModalOpen(true);
-    }
+  const driver = drivers.find((d) => d.id === driverId);
+  if (driver) {
+    setSelectedDriver(driver);
+    setIsEditModalOpen(true);
+  }
   };
+
+
 
   const handleUpdateDriver = (driverId: string, updates: Partial<Driver>) => {
     setDrivers(
-      drivers.map((driver: Driver) =>
-        driver.id === driverId ? { ...driver, ...updates } : driver
+      drivers.map((d) =>
+        d.id === driverId ? { ...d, ...updates } : d
       )
     );
     toast.success("Driver updated successfully");
@@ -402,10 +459,10 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
       <DeactivatedDriversModal
         isOpen={isDeactivatedModalOpen}
         onClose={() => setIsDeactivatedModalOpen(false)}
-        drivers={deactivatedDrivers.map((driver: Driver) => ({
-          ...driver,
-          deactivatedAt: driver.deactivatedAt || new Date().toISOString(),
-          reason: driver.deactivationReason,
+        drivers={deactivatedDrivers.map((d) => ({
+          ...d,
+          deactivatedAt: d.deactivatedAt || new Date().toISOString(),
+          reason: d.deactivationReason,
           }))}
 
         isDarkMode={isDarkMode}
