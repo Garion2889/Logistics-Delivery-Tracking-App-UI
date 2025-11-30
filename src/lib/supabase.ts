@@ -14,7 +14,8 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
       eventsPerSecond: 10,
     },
   },
-});
+  },  
+  );
 
 // Helper function to get current user
 export async function getCurrentUser() {
@@ -224,8 +225,6 @@ export async function fetchAllDrivers() {
 
   if (error) throw error;
 
-  // (Optional) log to verify what's coming back
-  console.log("fetchAllDrivers raw data:", data);
 
   return (data ?? []).map((d: any) => ({
     id: d.id,

@@ -164,7 +164,6 @@ const log_location_history = async (driverId: string, lat: number, lng: number) 
     );
 
     const data = await res.json();
-    console.log("Edge function response:", data);
 
     if (data?.recorded) {
       setLocationHistory(prev => [
@@ -195,7 +194,6 @@ useEffect(() => {
       );
 
       const data = await res.json();
-      console.log("Location history logged for active drivers:", data);
     } catch (err) {
       console.error("Error logging driver locations:", err);
     }
@@ -266,7 +264,6 @@ const fetchLocationHistory = async (driverId: string) => {
       recorded_at: row.recorded_at,
     }));
 
-    console.log('Fetched location history data:', formatted);
     setLocationHistory(formatted);
   } catch (err) {
     console.error("Error fetching location history:", err);
@@ -368,7 +365,6 @@ useEffect(() => {
           table: 'drivers',
         },
         (payload) => {
-          console.log('Driver update received:', payload);
           // Refetch drivers on any change
           fetchDrivers();
         }

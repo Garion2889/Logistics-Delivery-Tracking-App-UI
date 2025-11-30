@@ -63,7 +63,6 @@ export function useGPSUploader(fallbackCoords?: GPSCoords) {
       });
 
       if (error) console.error("RPC error updating GPS:", error);
-      else console.log("GPS updated:", { latitude, longitude });
     };
 
     const startTracking = async () => {
