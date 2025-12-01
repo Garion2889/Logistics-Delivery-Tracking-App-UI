@@ -85,79 +85,13 @@ type PerfRow = {
   avg_rating: number | null;
 };
 
-// ------------------ Mock data (OK to keep for now) ------------------
-
-const mockOptimizedRoutes: OptimizedRoute[] = [
-  {
-    id: "1",
-    name: "Route A - North Metro",
-    driver: "Pedro Reyes",
-    stops: 12,
-    distance: 24.5,
-    estimatedTime: "4h 30m",
-    status: "active",
-    priority: "high",
-  },
-  {
-    id: "2",
-    name: "Route B - South Metro",
-    driver: "Carlos Mendoza",
-    stops: 15,
-    distance: 32.8,
-    estimatedTime: "5h 15m",
-    status: "assigned",
-    priority: "medium",
-  },
-  {
-    id: "3",
-    name: "Route C - East Metro",
-    stops: 10,
-    distance: 18.2,
-    estimatedTime: "3h 45m",
-    status: "planned",
-    priority: "high",
-  },
-  {
-    id: "4",
-    name: "Route D - West Metro",
-    stops: 8,
-    distance: 15.6,
-    estimatedTime: "3h 20m",
-    status: "planned",
-    priority: "low",
-  },
-];
-
-const mockScheduledDeliveries: ScheduledDelivery[] = [
-  {
-    id: "1",
-    date: "Nov 12, 2025",
-    driver: "Pedro Reyes",
-    deliveries: 24,
-    status: "in-progress",
-  },
-  {
-    id: "2",
-    date: "Nov 12, 2025",
-    driver: "Carlos Mendoza",
-    deliveries: 18,
-    status: "in-progress",
-  },
-  {
-    id: "3",
-    date: "Nov 13, 2025",
-    driver: "Luis Ramos",
-    deliveries: 20,
-    status: "scheduled",
-  },
-  {
-    id: "4",
-    date: "Nov 13, 2025",
-    driver: "Miguel Santos",
-    deliveries: 22,
-    status: "scheduled",
-  },
-];
+interface Delivery {
+  id: string;
+  customer_name: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+}
 
 // ------------------ Component ------------------
 
@@ -166,7 +100,6 @@ export function RouteOptimizationPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
-  
 
   // real drivers for availability/map
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -174,6 +107,75 @@ export function RouteOptimizationPage() {
   // performance tab data
   const [performanceRows, setPerformanceRows] = useState<PerfRow[]>([]);
   const [loadingPerf, setLoadingPerf] = useState(false);
+
+  // real data states
+  const [optimizedRoutes, setOptimizedRoutes] = useState<OptimizedRoute[]>([]);
+  const [scheduledDeliveries, setScheduledDeliveries] = useState<ScheduledDelivery[]>([]);
+
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+
+
+   // ------------------ Fetch and geocode deliveries ------------------
+  const geocodeDelivery = async (delivery: Delivery) => {
+  if (delivery.latitude && delivery.longitude) return; // already has geolocation
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(delivery.address)}&limit=1`
+    );
+    const geo = await res.json();
+    if (geo.length > 0) {
+      const lat = parseFloat(geo[0].lat);
+      const lng = parseFloat(geo[0].lon);
+
+      // update in Supabase
+      const { data: updated, error: updateError } = await supabase
+        .from("deliveries")
+        .update({ latitude: lat, longitude: lng })
+        .eq("id", delivery.id);
+
+      if (updateError) console.error("Supabase update failed:", updateError);
+
+      // update local state
+      setDeliveries((prev) =>
+        prev.map((d) =>
+          d.id === delivery.id ? { ...d, latitude: lat, longitude: lng } : d
+        )
+      );
+    } else {
+      console.warn("No geocode result for", delivery.address);
+    }
+  } catch (err) {
+    console.error("Failed to geocode delivery:", delivery.address, err);
+  }
+};
+
+  
+useEffect(() => {
+  const fetchAndGeocodeDeliveries = async () => {
+    const { data, error } = await supabase
+      .from("deliveries")
+      .select("*")
+      .eq("status", "created"); // or your desired filter
+
+    if (error) {
+      console.error("Error fetching deliveries:", error);
+      return;
+    }
+
+    setDeliveries(data || []);
+
+    // geocode each delivery
+    for (const d of data || []) {
+      await geocodeDelivery(d as Delivery);
+      // Optional: add a small delay to respect rate limits
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+  };
+
+  fetchAndGeocodeDeliveries();
+}, []);
+
 
   // ------------------ Fetch drivers ------------------
   useEffect(() => {
@@ -393,10 +395,10 @@ useEffect(() => {
                   Active Routes
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {mockOptimizedRoutes.filter((r) => r.status === "active").length}
+                  {optimizedRoutes.filter((r) => r.status === "active").length}
                 </h3>
                 <p className="text-xs text-blue-600 mt-1">
-                  {mockOptimizedRoutes.filter((r) => r.status === "planned").length} planned
+                  {optimizedRoutes.filter((r) => r.status === "planned").length} planned
                 </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -551,12 +553,12 @@ useEffect(() => {
                   <CardTitle className="flex items-center justify-between">
                     <span>Optimized Routes</span>
                     <Badge variant="outline">
-                      {mockOptimizedRoutes.length} routes
+                    
                     </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {mockOptimizedRoutes.map((route) => (
+                  {optimizedRoutes.map((route) => (
                     <div
                       key={route.id}
                       onClick={() => setSelectedRoute(route)}
@@ -783,7 +785,7 @@ useEffect(() => {
               </CardHeader>
               <CardContent className="p-4">
         <Calendar
-          onChange={setDate}
+          onChange={(value) => setDate(value as Date)}
           value={date}
           className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
           // mode="single" is default in react-calendar
@@ -809,7 +811,7 @@ useEffect(() => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {mockScheduledDeliveries.map((schedule) => (
+                    {scheduledDeliveries.map((schedule) => (
                       <TableRow key={schedule.id}>
                         <TableCell>{schedule.date}</TableCell>
                         <TableCell>{schedule.driver}</TableCell>
