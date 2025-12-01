@@ -15,6 +15,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
+import { AssignDriverModal } from "./components/AssignDriverModal";
 
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
@@ -84,6 +85,11 @@ export default function App() {
     open: boolean;
     driver: Driver | null;
   }>({ open: false, driver: null });
+  const [assignDriverModal, setAssignDriverModal] = useState({
+    open: false,
+    delivery: null as Delivery | null, });
+  
+
 
   // ---------- Load session from localStorage ----------
   useEffect(() => {
@@ -349,6 +355,46 @@ const handleDeactivateDriver = async (driverId: string) => {
     }
   };
 
+
+  const handleAssignDriver = async (driverId: string) => {
+  if (!assignDriverModal.delivery) return;
+
+  const refNo = assignDriverModal.delivery.refNo;
+
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assign-driver`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deliveryRefNo: refNo,
+          driverId,
+        }),
+      }
+    );
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to assign driver");
+
+    toast.success(`Driver assigned to ${refNo}`);
+
+    setAssignDriverModal({ open: false, delivery: null });
+    await fetchDeliveries(); // 🔥 refresh table
+  } catch (err: any) {
+    toast.error(err.message);
+  }
+};
+  
+  const mapDriverForModal = (d: Driver) => ({
+  id: d.id,
+  name: d.name,
+  email: d.email,
+  vehicle: d.vehicle_type || "Unknown",   // modal requires `vehicle`
+  status: d.status,
+  activeDeliveries: 0,                     // or compute real number later
+});
+
   // Persist current page and dark mode whenever they change
   useEffect(() => {
     localStorage.setItem("currentPage", currentPage);
@@ -477,7 +523,12 @@ const handleDeactivateDriver = async (driverId: string) => {
             ) : currentPage === "dashboard" ? (
               <AdminDashboard stats={dashboardStats} />
             ) : currentPage === "deliveries" ? (
-              <DeliveryManagement deliveries={deliveries} onViewDelivery={setSelectedDelivery} onAssignDriver={() => {}} onUpdateDelivery={() => {}} onMarkComplete={() => {}} />
+              <DeliveryManagement
+               deliveries={deliveries} 
+               onViewDelivery={setSelectedDelivery} 
+               onAssignDriver={(delivery) => setAssignDriverModal({ open: true, delivery })} 
+               onUpdateDelivery={() => {}} 
+               onMarkComplete={() => {}} />
             ) : currentPage === "drivers" ? (
               <DriverManagement
                 drivers={drivers}
@@ -510,6 +561,14 @@ const handleDeactivateDriver = async (driverId: string) => {
             driver={editDriverModal.driver}
             onUpdate={handleUpdateDriver}
           />
+          <AssignDriverModal
+            isOpen={assignDriverModal.open}
+            onClose={() => setAssignDriverModal({ open: false, delivery: null })}
+            drivers={drivers.map(mapDriverForModal)}
+            deliveryRefNo={assignDriverModal.delivery?.refNo || ""}
+            onAssign={handleAssignDriver}
+          />
+
         </>
       );
 
