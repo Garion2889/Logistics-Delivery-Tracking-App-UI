@@ -42,10 +42,11 @@ import {
   TableHeader,
   TableRow,
 } from "./ui/table";
-import { Calendar as ReactCalendar } from "react-calendar";
-export { ReactCalendar as Calendar };
+
+// ✅ FIXED calendar import (ONLY ONE)
+import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
-import { Calendar } from "react-calendar";
+
 
 // ------------------ Types ------------------
 
@@ -96,6 +97,17 @@ interface Delivery {
   longitude: number | null;
 }
 
+/** ✅ schedule row type */
+type ScheduleRow = {
+  id: string;
+  driver_id: string;
+  schedule_date: string;
+  deliveries_count: number;
+  status: "scheduled" | "in_progress" | "in-progress" | "completed";
+  driver_name: string | null;
+  vehicle_type: string | null;
+};
+
 // ------------------ Component ------------------
 
 export function RouteOptimizationPage() {
@@ -103,6 +115,9 @@ export function RouteOptimizationPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
+
+  // ✅ NEW: track active tab so we fetch schedules only when schedule is opened
+  const [activeTab, setActiveTab] = useState("availability");
 
   // real drivers for availability/map
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -165,6 +180,10 @@ const handleAutoAssign = async () => {
   useEffect(() => {
   handleAutoAssign();
 }, []);
+
+  // ✅ ADDED: schedule state (REQUIRED)
+  const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([]);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
 
 
    // ------------------ Fetch and geocode deliveries ------------------
@@ -306,10 +325,7 @@ useEffect(() => {
       "get-driver-performance",
       {
         method: "POST",
-        body: {
-          from: "2025-11-01",
-          to: "2025-11-30",
-        },
+        body: {}, // ✅ no from/to = get all rows
       }
     );
 
@@ -328,6 +344,48 @@ useEffect(() => {
   loadPerformance();
 }, []);
 
+
+
+ /** ✅ FIXED: Fetch schedules only when Schedule tab opens */
+  useEffect(() => {
+    if (activeTab !== "schedule") return;
+
+    console.log("✅ Schedule tab opened — fetching schedules...");
+    const loadSchedules = async () => {
+      setLoadingSchedule(true);
+
+      const { data, error } = await supabase
+        .from("driver_schedules_view") // IMPORTANT: view has RLS off
+        .select("*")
+        .order("schedule_date", { ascending: false });
+
+      console.log("📦 SCHEDULE VIEW data:", data);
+      console.log("❌ SCHEDULE VIEW error:", error);
+      console.log("📊 SCHEDULE VIEW count:", data?.length ?? 0);
+
+      if (error || !data) {
+        setScheduleRows([]);
+        setLoadingSchedule(false);
+        return;
+      }
+
+      setScheduleRows(
+        data.map((s: any) => ({
+          id: s.id,
+          driver_id: s.driver_id,
+          schedule_date: s.schedule_date,
+          deliveries_count: s.deliveries_count ?? 0,
+          status: s.status,
+          driver_name: s.driver_name ?? s.name ?? null,
+          vehicle_type: s.vehicle_type ?? null,
+        }))
+      );
+
+      setLoadingSchedule(false);
+    };
+
+    loadSchedules();
+  }, [activeTab]);
 
   // ------------------ Derived KPI values ------------------
   const activeDriversCount = useMemo(
@@ -515,7 +573,13 @@ useEffect(() => {
       </div>
 
       {/* Main Content */}
-      <Tabs defaultValue="availability" className="w-full">
+      {/* ✅ FIXED: Controlled tabs so activeTab updates */}
+      <Tabs
+        defaultValue="availability"
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="w-full"
+      >
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="availability">Availability</TabsTrigger>
           <TabsTrigger value="routes">Optimized Routes</TabsTrigger>
@@ -846,21 +910,21 @@ useEffect(() => {
                 <CardTitle>Schedule Calendar</CardTitle>
               </CardHeader>
               <CardContent className="p-4">
-        <Calendar
-          onChange={(value) => setDate(value as Date)}
-          value={date}
-          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-          // mode="single" is default in react-calendar
-        />
-      </CardContent>
-    </Card>
+                <Calendar
+                  onChange={(value) => setDate(value as Date)}
+                  value={date}
+                  className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+              </CardContent>
+            </Card>
+
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span>Scheduled Deliveries</span>
-                  <Button size="sm">Schedule New</Button>
                 </CardTitle>
               </CardHeader>
+
               <CardContent>
                 <Table>
                   <TableHeader>
@@ -872,32 +936,65 @@ useEffect(() => {
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
+
                   <TableBody>
-                    {scheduledDeliveries.map((schedule) => (
-                      <TableRow key={schedule.id}>
-                        <TableCell>{schedule.date}</TableCell>
-                        <TableCell>{schedule.driver}</TableCell>
-                        <TableCell>{schedule.deliveries} deliveries</TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              schedule.status === "completed"
-                                ? "bg-green-700 text-white"
-                                : schedule.status === "in-progress"
-                                ? "bg-blue-600 text-white"
-                                : "bg-[#27AE60] text-white"
-                            }
-                          >
-                            {schedule.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            Edit Schedule
-                          </Button>
+                    {loadingSchedule ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center">
+                          Loading schedules...
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : scheduleRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center">
+                          No schedules yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      scheduleRows.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell>
+                            {new Date(s.schedule_date).toLocaleDateString()}
+                          </TableCell>
+
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="text-[#222B2D] dark:text-white">
+                                {s.driver_name ?? s.driver_id}
+                              </span>
+                              <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                                {s.vehicle_type ?? ""}
+                              </span>
+                            </div>
+                          </TableCell>
+
+                          <TableCell>
+                            {s.deliveries_count} deliveries
+                          </TableCell>
+
+                          <TableCell>
+                            <Badge
+                              className={
+                                s.status === "completed"
+                                  ? "bg-green-700 text-white"
+                                  : s.status === "in_progress" ||
+                                    s.status === "in-progress"
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-[#27AE60] text-white"
+                              }
+                            >
+                              {s.status}
+                            </Badge>
+                          </TableCell>
+
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm">
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -940,4 +1037,3 @@ useEffect(() => {
     </div>
   );
 }
-
