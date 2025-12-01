@@ -1,4 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react"
+import { autoAssignRoutes } from "../lib/supabase";
+import { toast } from "sonner";
+;
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -149,105 +152,6 @@ export function RouteOptimizationPage() {
     console.error("Failed to geocode delivery:", delivery.address, err);
   }
 };
-
-// ------------------ CALL SUPABASE EDGE FUNCTION ------------------
-
-const fetchOptimizedRoutes = async () => {
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "driver-route-handler",
-      {
-        body: { action: "list" },
-      }
-    );
-
-    if (error) {
-      console.error("Error fetching routes:", error);
-      return;
-    }
-
-    // Adapt backend to your frontend structure
-    const formatted = data.map((r: any) => ({
-      id: r.id,
-      name: r.route_name,
-      stops: r.stops,
-      distance: r.distance_km,
-      estimatedTime: r.estimated_time,
-      status: r.status,
-      priority: r.priority,
-      driver: r.driver?.name ?? null,
-    }));
-
-    setOptimizedRoutes(formatted);
-  } catch (err) {
-    console.error("Failed to load routes:", err);
-  }
-};
-
-// ------------------ CREATE ROUTE ------------------
-
-const createOptimizedRoute = async (deliveryIds: string[], routeName?: string) => {
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "driver-route-handler",
-      {
-        body: {
-          action: "create",
-          deliveryIds,
-          routeName: routeName || null,
-          priority: "medium",
-        },
-      }
-    );
-
-    if (error) {
-      alert("Route creation failed");
-      console.error(error);
-      return;
-    }
-
-    console.log("Route created:", data);
-
-    // refresh list
-    await fetchOptimizedRoutes();
-  } catch (err) {
-    console.error(err);
-  }
-};
-
-// ------------------ ASSIGN DRIVER TO ROUTE ------------------
-
-const assignDriver = async (routeId: string, driverId: string) => {
-  try {
-    const { data, error } = await supabase.functions.invoke(
-      "driver-route-handler",
-      {
-        body: {
-          action: "assign_driver",
-          routeId,
-          driverId,
-        },
-      }
-    );
-
-    if (error) {
-      console.error("Assign driver error:", error);
-      return;
-    }
-
-    console.log("Driver assigned:", data);
-
-    // refresh list
-    await fetchOptimizedRoutes();
-  } catch (err) {
-    console.error("Error:", err);
-  }
-};
-
-useEffect(() => {
-  fetchOptimizedRoutes();
-  }, []);
-
   
 useEffect(() => {
   const fetchAndGeocodeDeliveries = async () => {
@@ -440,27 +344,66 @@ useEffect(() => {
         return "text-gray-600";
     }
   };
+// ------------------ Auto Assign Handler ------------------
+  const handleAutoAssign = async () => {
+  try {
+    toast.info("Assigning nearest deliveries to drivers...");
+
+    const { ok, data } = await autoAssignRoutes();
+
+    if (!ok) {
+      toast.error(data.error || "Auto-assign failed");
+      return;
+    }
+
+    toast.success("Auto assignment completed!");
+    console.log("Assignments:", data.assignments);
+
+    // OPTIONAL: refresh local UI
+    // await fetchDrivers();
+    // await fetchAndGeocodeDeliveries();
+  } catch (error) {
+    console.error("Auto assign error:", error);
+    toast.error("An error occurred");
+  }
+  };
+
+  useEffect(() => {
+  handleAutoAssign();
+}, []);
+
 
   // ------------------ Render ------------------
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-[#222B2D] dark:text-white mb-2">
-            Driver Management & Route Optimization
-          </h1>
-          <p className="text-[#222B2D]/60 dark:text-white/60">
-            Optimize routes and manage driver assignments efficiently
-          </p>
-        </div>
+  <div className="space-y-6">
+    {/* Page Header */}
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 className="text-[#222B2D] dark:text-white mb-2">
+          Driver Management & Route Optimization
+        </h1>
+        <p className="text-[#222B2D]/60 dark:text-white/60">
+          Optimize routes and manage driver assignments efficiently
+        </p>
+      </div>
 
+      {/*  Both buttons wrapped properly */}
+      <div className="flex gap-3">
         <Button onClick={() => setShowOptimizeModal(true)} className="gap-2">
           <Zap className="w-4 h-4" />
           Optimize Routes
         </Button>
+
+        <Button
+          onClick={handleAutoAssign}
+          className="gap-2 bg-[#27AE60] text-white"
+        >
+          <Truck className="w-4 h-4" />
+          Auto Assign
+        </Button>
       </div>
+    </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -704,19 +647,10 @@ useEffect(() => {
                       </div>
 
                       {route.status === "planned" && (
-                          <Button
-                            size="sm"
-                            className="w-full mt-3"
-                            onClick={() => {
-                              const driverId = prompt("Driver ID:");
-                              if (!driverId) return;
-                              assignDriver(route.id, driverId);
-                            }}
-                          >
-                            Assign Driver
-                          </Button>
-                        )}
-
+                        <Button size="sm" className="w-full mt-3">
+                          Assign Driver
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </CardContent>
@@ -972,16 +906,11 @@ useEffect(() => {
                   Cancel
                 </Button>
                 <Button
-                  onClick={async () => {
-                    const selectedIds = deliveries.map((d) => d.id); // example
-                    await createOptimizedRoute(selectedIds);
-                    setShowOptimizeModal(false);
-                  }}
+                  onClick={() => setShowOptimizeModal(false)}
                   className="flex-1"
                 >
                   Apply Optimization
                 </Button>
-
               </div>
             </CardContent>
           </Card>
