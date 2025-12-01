@@ -56,10 +56,9 @@ export function AnalyticsDashboard() {
   // Data States
   const [kpiStats, setKpiStats] = useState({
     total_deliveries: 0,
-    revenue: 0,
     active_deliveries: 0,
     success_rate: 0,
-    avg_fee: 0,
+    avg_delivery_time_minutes: 0,
   });
   const [dailyStats, setDailyStats] = useState<any[]>([]);
   const [driverStats, setDriverStats] = useState<any[]>([]);
@@ -77,29 +76,45 @@ export function AnalyticsDashboard() {
       try {
         console.log("Fetching dashboard data...", { startDate, endDate });
 
-        // 1. KPI Summary (RPC)
-        const { data: kpiData, error: kpiError } = await supabase.rpc('get_kpi_summary', { 
-          start_date: startDate, 
-          end_date: endDate 
-        });
-        if (kpiError) console.error("KPI Error:", kpiError);
-        if (kpiData && kpiData.length > 0) setKpiStats(kpiData[0]);
-
-        // 2. Daily Trends (View)
+        // 1. Daily Trends (View)
         const { data: trendData, error: trendError } = await supabase
           .from('analytics_daily_stats')
           .select('*')
           .gte('report_date', startDate)
           .lte('report_date', endDate)
           .order('report_date', { ascending: true });
-        
+
         if (trendError) console.error("Trend Error:", trendError);
-        
+
         // Format dates for Recharts
-        setDailyStats(trendData?.map(d => ({
+        const formattedTrendData = trendData?.map(d => ({
             ...d,
             formatted_date: format(new Date(d.report_date), 'MMM dd')
-        })) || []);
+        })) || [];
+        setDailyStats(formattedTrendData);
+
+        // 2. Compute KPI Summary from daily stats
+        if (formattedTrendData.length > 0) {
+          const totalDeliveries = formattedTrendData.reduce((sum, d) => sum + d.total_deliveries, 0);
+          const activeDeliveries = formattedTrendData.reduce((sum, d) => sum + d.active_deliveries, 0);
+          const completedDeliveries = formattedTrendData.reduce((sum, d) => sum + d.completed_deliveries, 0);
+          const successRate = totalDeliveries > 0 ? Math.round((completedDeliveries / totalDeliveries) * 100) : 0;
+          const avgDeliveryTime = formattedTrendData.reduce((sum, d) => sum + d.avg_delivery_time_minutes, 0) / formattedTrendData.length || 0;
+
+          setKpiStats({
+            total_deliveries: totalDeliveries,
+            active_deliveries: activeDeliveries,
+            success_rate: successRate,
+            avg_delivery_time_minutes: Math.round(avgDeliveryTime * 100) / 100, // Round to 2 decimal places
+          });
+        } else {
+          setKpiStats({
+            total_deliveries: 0,
+            active_deliveries: 0,
+            success_rate: 0,
+            avg_delivery_time_minutes: 0,
+          });
+        }
 
         // 3. Driver Performance (View)
         const { data: driverData, error: driverError } = await supabase
@@ -112,11 +127,11 @@ export function AnalyticsDashboard() {
 
         // 4. Area Coverage (Mock for demo purposes)
         setAreaCoverage([
-          { area: "Quezon City", deliveries: 156, revenue: 178000 },
-          { area: "Makati", deliveries: 125, revenue: 145000 },
-          { area: "Taguig", deliveries: 98, revenue: 132000 },
-          { area: "Pasig", deliveries: 85, revenue: 95000 },
-          { area: "Manila", deliveries: 110, revenue: 120000 },
+          { area: "Quezon City", deliveries: 156},
+          { area: "Makati", deliveries: 125},
+          { area: "Taguig", deliveries: 98},
+          { area: "Pasig", deliveries: 85},
+          { area: "Manila", deliveries: 110},
         ]);
 
       } catch (error) {
@@ -256,32 +271,25 @@ export function AnalyticsDashboard() {
       </div>
 
       {/* --- KPI CARDS --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard 
-            title="Total Revenue" 
-            value={`₱${kpiStats.revenue.toLocaleString()}`} 
-            icon={<TrendingUp className="w-5 h-5 text-[#27AE60]" />}
-            colorBg="bg-green-50 dark:bg-green-900/20"
-            loading={isLoading}
-        />
-        <KpiCard 
-            title="Active Deliveries" 
-            value={kpiStats.active_deliveries} 
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KpiCard
+            title="Active Deliveries"
+            value={kpiStats.active_deliveries}
             icon={<Truck className="w-5 h-5 text-orange-600" />}
             colorBg="bg-orange-50 dark:bg-orange-900/20"
             loading={isLoading}
         />
-        <KpiCard 
-            title="Success Rate" 
-            value={`${kpiStats.success_rate}%`} 
+        <KpiCard
+            title="Success Rate"
+            value={`${kpiStats.success_rate}%`}
             icon={<CheckCircle2 className="w-5 h-5 text-purple-600" />}
             colorBg="bg-purple-50 dark:bg-purple-900/20"
             loading={isLoading}
         />
-        <KpiCard 
-            title="Avg. Delivery Fee" 
-            value={`₱${kpiStats.avg_fee}`} 
-            icon={<Package className="w-5 h-5 text-blue-600" />}
+        <KpiCard
+            title="Avg Delivery Time"
+            value={`${kpiStats.avg_delivery_time_minutes} min`}
+            icon={<TrendingUp className="w-5 h-5 text-blue-600" />}
             colorBg="bg-blue-50 dark:bg-blue-900/20"
             loading={isLoading}
         />
@@ -313,9 +321,9 @@ export function AnalyticsDashboard() {
                       <YAxis />
                       <Tooltip />
                       <Legend />
-                      <Area type="monotone" dataKey="total_delivered" name="Completed" stackId="1" stroke="#27AE60" fill="#27AE60" fillOpacity={0.6} />
-                      <Area type="monotone" dataKey="total_pending" name="Pending" stackId="1" stroke="#F39C12" fill="#F39C12" fillOpacity={0.6} />
-                      <Area type="monotone" dataKey="total_cancelled" name="Cancelled" stackId="1" stroke="#E74C3C" fill="#E74C3C" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="completed_deliveries" name="Completed" stackId="1" stroke="#27AE60" fill="#27AE60" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="active_deliveries" name="Active" stackId="1" stroke="#F39C12" fill="#F39C12" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="total_deliveries" name="Total" stackId="1" stroke="#3498DB" fill="#3498DB" fillOpacity={0.6} />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -369,15 +377,15 @@ export function AnalyticsDashboard() {
                         <div className="grid grid-cols-3 gap-4 text-sm">
                             <div className="text-center md:text-left">
                             <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Assigned</p>
-                            <p className="font-mono font-semibold text-lg">{driver.total_assigned}</p>
+                            <p className="font-mono font-semibold text-lg">{driver.total_deliveries}</p>
                             </div>
                             <div className="text-center md:text-left">
                             <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Delivered</p>
                             <p className="font-mono font-semibold text-lg text-green-600">{driver.completed_deliveries}</p>
                             </div>
                             <div className="text-center md:text-left">
-                            <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Revenue</p>
-                            <p className="font-mono font-semibold text-lg">₱{driver.revenue_generated?.toLocaleString() || 0}</p>
+                            <p className="text-[#222B2D]/60 dark:text-white/60 text-xs uppercase font-bold">Avg Time</p>
+                            <p className="font-mono font-semibold text-lg">{driver.avg_delivery_time_minutes?.toFixed(1) || 0} min</p>
                             </div>
                         </div>
                         </div>
