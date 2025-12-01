@@ -164,7 +164,7 @@ export function DriverDashboard({
 
   // Auto-pan map when live GPS updates occur
   useEffect(() => {
-    if (driverLocation && mapRef.current) {
+    if (driverLocation && mapRef.current && typeof mapRef.current.getZoom === 'function') {
       mapRef.current.setView(driverLocation, mapRef.current.getZoom());
     }
   }, [driverLocation]);
@@ -255,7 +255,7 @@ export function DriverDashboard({
                     center={driverLocation || [14.5995, 120.9842]}
                     zoom={13}
                     style={{ height: "400px", width: "100%" }}
-                    whenCreated={(map) => (mapRef.current = map)}
+                    whenReady={(map) => (mapRef.current = map)}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -287,8 +287,7 @@ export function DriverDashboard({
                 deliveries.map((delivery) => (
                   <Card
                     key={delivery.id}
-                    className="border-0 shadow-sm hover:shadow-md transition cursor-pointer"
-                    onClick={() => setSelectedDeliveryId(delivery.id)}
+                    className="border-0 shadow-sm hover:shadow-md transition"
                   >
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
@@ -313,6 +312,45 @@ export function DriverDashboard({
                           </p>
                         </div>
                       )}
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 pt-2">
+                        {delivery.status === "assigned" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+                            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                              e.stopPropagation();
+                              onUpdateStatus(delivery.id, "in-transit");
+                            }}
+                          >
+                            Accept Assignment
+                          </Button>
+                        )}
+                        {delivery.status === "in-transit" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUpdateStatus(delivery.id, "delivered");
+                            }}
+                          >
+                            Confirm Delivery
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                            e.stopPropagation();
+                            setSelectedDeliveryId(delivery.id);
+                          }}
+                        >
+                          View Details
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))

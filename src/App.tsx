@@ -155,7 +155,7 @@ export default function App() {
   const handleUpdateDeliveryStatus = async (deliveryId: string, status: Delivery["status"]) => {
     try {
       const dbStatus = mapStatusToDB(status);
-      await updateOrderStatusRpc(deliveryId, dbStatus);
+      await updateOrderStatusRpc(deliveryId, dbStatus as any);
       await fetchDeliveries();
       toast.success("Delivery status updated");
     } catch (error: any) {
@@ -448,8 +448,8 @@ const handleDeactivateDriver = async (driverId: string) => {
   const mapStatusToDB = (uiStatus: Delivery['status']): string => {
     const mapping: Record<Delivery['status'], string> = {
       'pending': 'created',
-      'assigned': 'dispatched',
-      'in-transit': 'in_transit',
+      'assigned': 'picked_up',  // Accept Assignment = picked up the package
+      'in-transit': 'delivered', // Confirm Delivery = mark as delivered
       'delivered': 'delivered',
       'returned': 'returned',
     };

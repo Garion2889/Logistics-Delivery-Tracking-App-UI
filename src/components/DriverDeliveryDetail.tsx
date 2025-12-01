@@ -144,7 +144,7 @@ export function DriverDeliveryDetail({
       <div className="space-y-3">
         {delivery.status === "assigned" && (
           <Button
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white h-12"
+            className="w-full bg-[#27AE60] hover:bg-[#229954 text-white h-12"
             onClick={() => onUpdateStatus("in-transit")}
           >
             <Package className="w-5 h-5 mr-2" />
@@ -159,7 +159,7 @@ export function DriverDeliveryDetail({
               onClick={() => onUpdateStatus("delivered")}
             >
               <CheckCircle2 className="w-5 h-5 mr-2" />
-              Mark as Delivered
+              Confirm Delivery
             </Button>
             <Button
               variant="outline"
