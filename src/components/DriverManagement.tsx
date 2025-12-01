@@ -71,7 +71,7 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   .from("drivers")
   .select(`
     *,
-    users:user_id (
+    logistics_users:user_id (
       email,
       phone,
       full_name
@@ -92,9 +92,9 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
   if (data) {
     const normalized = data.map((d: any) => ({
       id: d.id,
-      name: d.users?.full_name ?? d.name ?? "Unnamed Driver",
-      email: d.users?.email ?? "",
-      phone: d.users?.phone ?? "",
+      name: d.logistics_users?.full_name ?? d.name ?? "Unnamed Driver",
+      email: d.logistics_users?.email ?? "",
+      phone: d.logistics_users?.phone ?? "",
       status: d.status ?? "offline",
       rating: 0, // your DB doesn't have rating
       completedDeliveries: 0, // your DB doesn't have this

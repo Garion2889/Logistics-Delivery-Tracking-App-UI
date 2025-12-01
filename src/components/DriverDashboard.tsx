@@ -21,7 +21,7 @@ interface Delivery {
   refNo: string;
   customer: string;
   address: string;
-  status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
+  status: "pending" | "assigned" | "picked_up" |"in-transit" | "delivered" | "returned";
   paymentType: "COD" | "Paid";
   amount?: number;
 }
@@ -74,10 +74,10 @@ export function DriverDashboard({
         .eq("user_id", userId)
         .single();
       if (driverError || !driver?.id) return;
-      setDriverId(driver.id);
+      setDriverId(driver.id); 
 
       const { data: user, error: userError } = await supabase
-        .from("users")
+        .from("logistics_users")
         .select("full_name")
         .eq("id", userId)
         .single();
@@ -113,6 +113,15 @@ export function DriverDashboard({
       toast.error(`Failed to fetch deliveries: ${err.message}`);
     }
   };
+  const handleNextStatus = (currentStatus: Delivery["status"]): Delivery["status"] | null => {
+  switch (currentStatus) {
+    case "assigned": return "picked_up";
+    case "picked_up": return "in-transit";
+    case "in-transit": return "delivered";
+    default: return null;
+  }
+};
+
 
   // Subscribe to driver deliveries updates
   useEffect(() => {
@@ -305,33 +314,45 @@ export function DriverDashboard({
 
                       {/* ACTION BUTTONS */}
                       <div className="flex gap-2 pt-2">
-                        {delivery.status === "assigned" && (
-                          <Button
-                            size="sm"
-                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-                            onClick={() => onUpdateStatus(delivery.id, "in-transit")}
-                          >
-                            Accept Assignment
-                          </Button>
-                        )}
-                        {delivery.status === "in-transit" && (
-                          <Button
-                            size="sm"
-                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-                            onClick={() => onUpdateStatus(delivery.id, "delivered")}
-                          >
-                            Confirm Delivery
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => setSelectedDeliveryId(delivery.id)}
-                        >
-                          View Details
-                        </Button>
-                      </div>
+  {delivery.status === "assigned" && (
+    <Button
+      size="sm"
+      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+      onClick={() => onUpdateStatus(delivery.id, "picked_up")}
+    >
+      Accept Assignment
+    </Button>
+  )}
+
+  {delivery.status === "picked_up" && (
+    <Button
+      size="sm"
+      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+      onClick={() => onUpdateStatus(delivery.id, "in-transit")}
+    >
+      Start Delivery
+    </Button>
+  )}
+
+  {delivery.status === "in-transit" && (
+    <Button
+      size="sm"
+      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+      onClick={() => onUpdateStatus(delivery.id, "delivered")}
+    >
+      Confirm Delivery
+    </Button>
+  )}
+
+  <Button
+    size="sm"
+    variant="outline"
+    className="flex-1"
+    onClick={() => setSelectedDeliveryId(delivery.id)}
+  >
+    View Details
+  </Button>
+</div>
                     </CardContent>
                   </Card>
                 ))

@@ -27,7 +27,7 @@ export async function getCurrentUser() {
 // Helper function to get user profile with role
 export async function getUserProfile(userId: string) {
   const { data, error } = await supabase
-    .from('users')
+    .from('logistics_users')
     .select('*')
     .eq('id', userId)
     .single();
@@ -82,7 +82,7 @@ export async function createDriverAccount(driverData: {
   if (!authData.user) throw new Error('Failed to create user');
 
   // Create user profile
-  const { error: userError } = await supabase.from('users').insert({
+  const { error: userError } = await supabase.from('logistics_users').insert({
     id: authData.user.id,
     full_name: driverData.full_name,
     role: 'driver',
@@ -204,7 +204,7 @@ export async function updateDriverStatus(
 
   if (error) throw error;
 }
-// Fetch all drivers (join users + drivers tables)
+// Fetch all drivers (join logistics_users + drivers tables)
 export async function fetchAllDrivers() {
   const { data, error } = await supabase
     .from('drivers')
@@ -215,7 +215,7 @@ export async function fetchAllDrivers() {
       vehicle_type,
       status,
       is_active,
-      users (
+      logistics_users (
         full_name,
         email,
         phone
@@ -228,9 +228,9 @@ export async function fetchAllDrivers() {
 
   return (data ?? []).map((d: any) => ({
     id: d.id,
-    name: d.users?.full_name || d.name || "Unknown",
-    email: d.users?.email || "",
-    phone: d.users?.phone || "",
+    name: d.logistics_users?.full_name || d.name || "Unknown",
+    email: d.logistics_users?.email || "",
+    phone: d.logistics_users?.phone || "",
     vehicle: d.vehicle_type,
     status: d.status ?? "offline",
     activeDeliveries: 0,
@@ -455,3 +455,18 @@ export async function getOrderWithDetails(deliveryId: string) {
     processingStatus,
   };
 }
+
+// ============================================
+// RUN AUTO ASSIGN FUNCTION
+// ============================================
+//export async function autoAssignRoutes() {
+  ////const { data, error } = await supabase.functions.invoke(
+    //"auto-assign-routes",
+    //{
+     // method: "POST",
+   // }
+ // );
+
+  //if (error) throw error;
+//return data;
+//}

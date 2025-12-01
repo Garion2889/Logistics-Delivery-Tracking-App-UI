@@ -19,6 +19,7 @@ import { AssignDriverModal } from "./components/AssignDriverModal";
 
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
+//import { autoAssignRoutes } from "./lib/supabase"; 
 import 'leaflet/dist/leaflet.css';
 
 import "./styles/globals.css";
@@ -354,7 +355,19 @@ const handleDeactivateDriver = async (driverId: string) => {
       return null;
     }
   };
+  
+  //const handleAutoAssign = async () => {
+  //toast.info("Assigning deliveries...");
 
+  //const { ok, data } = await autoAssignRoutes();
+
+  //if (!ok) return toast.error(data.error || "Auto-assign failed");
+
+  //toast.success("Auto Assignment Completed");
+  //console.log("Assignments:", data.assignments);
+
+  //await fetchDeliveries(); // refresh UI
+  //};
 
   const handleAssignDriver = async (driverId: string) => {
   if (!assignDriverModal.delivery) return;
@@ -420,7 +433,7 @@ const handleDeactivateDriver = async (driverId: string) => {
           *,
           driver_info:drivers!assigned_driver(
             id,
-            user_info:users!user_id(full_name)
+            user_info:logistics_users!user_id(full_name)
           )
         `)
         .order('created_at', { ascending: false });

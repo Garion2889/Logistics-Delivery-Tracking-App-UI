@@ -1,7 +1,9 @@
 
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Package, Truck, CheckCircle2, RotateCcw } from "lucide-react";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Package, Truck, CheckCircle2, RotateCcw, UserPlus } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -10,6 +12,7 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { supabase } from "../utils/supabase/client";
 import { PanToSelectedDriver } from "./PanToSelectedDriver";
+import { AssignDriverModal } from "./AssignDriverModal";
 
 interface DashboardStats {
   pendingOrders: number;
@@ -32,6 +35,26 @@ interface LiveDriverLocation {
 interface Driver {
   id?: string;
   name?: string;
+}
+
+interface PendingDelivery {
+  id: string;
+  ref_no: string;
+  customer_name: string;
+  address: string;
+  payment_type: "COD" | "Paid";
+  status: string;
+  assigned_driver: string | null;
+  created_at: string;
+}
+
+interface DriverOption {
+  id: string;
+  name: string;
+  email: string;
+  vehicle: string;
+  status: "online" | "offline";
+  activeDeliveries: number;
 }
 
 const stringToColor = (str?: string) => {
@@ -64,8 +87,12 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<LiveDriverLocation | null>(null);
   const [drivers, setDrivers] = useState<Record<string, Driver>>({});
+  const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([]);
+  const [availableDrivers, setAvailableDrivers] = useState<DriverOption[]>([]);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<PendingDelivery | null>(null);
 
-  // Fetch driver info for name initials in markers 
+  // Fetch driver info for name initials in markers
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from("drivers").select("id, name");
@@ -83,6 +110,51 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     })();
   }
   , []);
+
+  // Fetch pending deliveries and available drivers
+  useEffect(() => {
+    const fetchPendingDeliveries = async () => {
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(5); // Show only recent 5 pending deliveries
+
+      if (error) {
+        console.error("Failed to fetch pending deliveries:", error);
+        return;
+      }
+
+      setPendingDeliveries(data || []);
+    };
+
+    const fetchAvailableDrivers = async () => {
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('id, name, email, vehicle_type, plate_number, status')
+        .in('status', ['online', 'on_delivery']);
+
+      if (error) {
+        console.error("Failed to fetch available drivers:", error);
+        return;
+      }
+
+      const formattedDrivers: DriverOption[] = (data || []).map(d => ({
+        id: d.id,
+        name: d.name || 'Unknown Driver',
+        email: d.email || '',
+        vehicle: `${d.vehicle_type} - ${d.plate_number || 'No plate'}`,
+        status: d.status as "online" | "offline",
+        activeDeliveries: 0, // We'll calculate this if needed
+      }));
+
+      setAvailableDrivers(formattedDrivers);
+    };
+
+    fetchPendingDeliveries();
+    fetchAvailableDrivers();
+  }, []);
 
   // Subscribe to real-time driver GPS updates
   useEffect(() => {
@@ -174,6 +246,44 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     shadowUrl: markerShadow,
     shadowSize: [41, 41],
   });
+
+  // Handler for opening assign modal
+  const handleAssignDriver = (delivery: PendingDelivery) => {
+    setSelectedDelivery(delivery);
+    setAssignModalOpen(true);
+  };
+
+  // Handler for assigning driver
+  const handleDriverAssigned = async (driverId: string) => {
+    if (!selectedDelivery) return;
+
+    try {
+      const { error } = await supabase
+        .from('deliveries')
+        .update({
+          assigned_driver: driverId,
+          status: 'assigned',
+          assigned_at: new Date().toISOString()
+        })
+        .eq('id', selectedDelivery.id);
+
+      if (error) {
+        console.error("Failed to assign driver:", error);
+        alert("Failed to assign driver. Please try again.");
+        return;
+      }
+
+      // Update local state
+      setPendingDeliveries(prev => prev.filter(d => d.id !== selectedDelivery.id));
+      setAssignModalOpen(false);
+      setSelectedDelivery(null);
+
+      alert("Driver assigned successfully!");
+    } catch (err) {
+      console.error("Error assigning driver:", err);
+      alert("An error occurred while assigning the driver.");
+    }
+  };
 
   return (
     <div className="space-y-6">
