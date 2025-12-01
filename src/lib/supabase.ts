@@ -459,14 +459,14 @@ export async function getOrderWithDetails(deliveryId: string) {
 // ============================================
 // RUN AUTO ASSIGN FUNCTION
 // ============================================
-//export async function autoAssignRoutes() {
-  ////const { data, error } = await supabase.functions.invoke(
-    //"auto-assign-routes",
-    //{
-     // method: "POST",
-   // }
- // );
+export async function autoAssignRoutes() {
+  const { data, error } = await supabase.functions.invoke(
+    "auto-assign-routes",
+    {
+      method: "POST",
+    }
+  );
 
-  //if (error) throw error;
-//return data;
-//}
+  if (error) throw error;
+  return data;
+}

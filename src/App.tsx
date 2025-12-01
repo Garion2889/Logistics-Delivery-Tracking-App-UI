@@ -19,7 +19,7 @@ import { AssignDriverModal } from "./components/AssignDriverModal";
 
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
-//import { autoAssignRoutes } from "./lib/supabase"; 
+import { autoAssignRoutes } from "./lib/supabase"; 
 import 'leaflet/dist/leaflet.css';
 
 import "./styles/globals.css";
@@ -356,18 +356,18 @@ const handleDeactivateDriver = async (driverId: string) => {
     }
   };
   
-  //const handleAutoAssign = async () => {
-  //toast.info("Assigning deliveries...");
+  const handleAutoAssign = async () => {
+  toast.info("Assigning deliveries...");
 
-  //const { ok, data } = await autoAssignRoutes();
+  const { ok, data } = await autoAssignRoutes();
 
-  //if (!ok) return toast.error(data.error || "Auto-assign failed");
+  if (!ok) return toast.error(data.error || "Auto-assign failed");
 
-  //toast.success("Auto Assignment Completed");
-  //console.log("Assignments:", data.assignments);
+  toast.success("Auto Assignment Completed");
+  console.log("Assignments:", data.assignments);
 
-  //await fetchDeliveries(); // refresh UI
-  //};
+  await fetchDeliveries(); // refresh UI
+  };
 
   const handleAssignDriver = async (driverId: string) => {
   if (!assignDriverModal.delivery) return;
