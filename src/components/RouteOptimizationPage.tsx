@@ -116,6 +116,55 @@ export function RouteOptimizationPage() {
   const [scheduledDeliveries, setScheduledDeliveries] = useState<ScheduledDelivery[]>([]);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const refreshDeliveries = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("deliveries")
+      .select(`
+        id,
+        ref_no,
+        customer_name,
+        address,
+        latitude,
+        longitude,
+        status,
+        assigned_driver
+      `)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    setDeliveries(data || []);
+  } catch (err) {
+    console.error("Failed to refresh deliveries:", err);
+  }
+};
+
+// ------------------ Auto Assign Handler ------------------
+const handleAutoAssign = async () => {
+  try {
+    console.log("Calling auto-assign...");
+    const { ok, data } = await autoAssignRoutes();
+
+    if (!ok) {
+      toast.error(data.error || "Auto-assign failed");
+      return;
+    }
+
+    toast.success("Auto Assignment Completed");
+    console.log("Assignments:", data.assignments);
+
+    await refreshDeliveries();
+  } catch (err: any) {
+    console.error("Auto assign error:", err);
+    toast.error("Auto assign failed");
+  }
+};
+
+
+  useEffect(() => {
+  handleAutoAssign();
+}, []);
 
 
    // ------------------ Fetch and geocode deliveries ------------------
@@ -344,34 +393,6 @@ useEffect(() => {
         return "text-gray-600";
     }
   };
-// ------------------ Auto Assign Handler ------------------
-  const handleAutoAssign = async () => {
-  try {
-    toast.info("Assigning nearest deliveries to drivers...");
-
-    const { ok, data } = await autoAssignRoutes();
-
-    if (!ok) {
-      toast.error(data.error || "Auto-assign failed");
-      return;
-    }
-
-    toast.success("Auto assignment completed!");
-    console.log("Assignments:", data.assignments);
-
-    // OPTIONAL: refresh local UI
-    // await fetchDrivers();
-    // await fetchAndGeocodeDeliveries();
-  } catch (error) {
-    console.error("Auto assign error:", error);
-    toast.error("An error occurred");
-  }
-  };
-
-  useEffect(() => {
-  handleAutoAssign();
-}, []);
-
 
   // ------------------ Render ------------------
 

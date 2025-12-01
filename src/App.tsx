@@ -356,18 +356,6 @@ const handleDeactivateDriver = async (driverId: string) => {
     }
   };
   
-  const handleAutoAssign = async () => {
-  toast.info("Assigning deliveries...");
-
-  const { ok, data } = await autoAssignRoutes();
-
-  if (!ok) return toast.error(data.error || "Auto-assign failed");
-
-  toast.success("Auto Assignment Completed");
-  console.log("Assignments:", data.assignments);
-
-  await fetchDeliveries(); // refresh UI
-  };
 
   const handleAssignDriver = async (driverId: string) => {
   if (!assignDriverModal.delivery) return;
