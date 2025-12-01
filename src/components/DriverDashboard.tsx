@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -11,14 +10,14 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useGPSUploader } from "../drivermaptracker/gpsTracker";
 import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "./ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
 import { PanToSelectedDriver } from "./PanToSelectedDriver";
 
 interface Delivery {
   id: string;
+  driver_id: string;
   refNo: string;
   customer: string;
   address: string;
@@ -28,88 +27,119 @@ interface Delivery {
 }
 
 interface DriverDashboardProps {
-  deliveries: Delivery[];
   onUpdateStatus: (deliveryId: string, status: Delivery["status"]) => void;
   onUploadPOD: (deliveryId: string) => void;
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
-  driverName: string;
-  stats: {
-    total: number;
-    completed: number;
-    returned: number;
-  };
 }
 
 export function DriverDashboard({
-  deliveries,
   onUpdateStatus,
   onUploadPOD,
   onLogout,
   isDarkMode,
   onToggleDarkMode,
-  driverName,
-  stats,
 }: DriverDashboardProps) {
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
   const [driverId, setDriverId] = useState<string>("");
-  const [fetchedDriverName, setFetchedDriverName] = useState<string>("");
-
+  const [driverName, setDriverName] = useState<string>("");
   const mapRef = useRef<L.Map | null>(null);
 
-  // Start GPS upload for this driver
-  useGPSUploader();
+  // Map DB status -> dashboard status
+  const mapStatus = (dbStatus: string): Delivery["status"] => {
+    switch (dbStatus) {
+      case "pending": return "pending";
+      case "assigned": return "assigned";
+      case "picked_up":
+      case "in_transit": return "in-transit";
+      case "delivered": return "delivered";
+      case "returned": return "returned";
+      default: return "pending";
+    }
+  };
 
   // Fetch driver ID and name
   useEffect(() => {
     const fetchDriverData = async () => {
-      const { data: authUserData } = await supabase.auth.getUser();
-      const userId = authUserData?.user?.id;
-      if (!userId) {
-        console.warn("No authenticated user found");
-        return;
-      }
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id;
+      if (!userId) return;
 
-      // First get the driver record
       const { data: driver, error: driverError } = await supabase
         .from("drivers")
         .select("id")
         .eq("user_id", userId)
         .single();
-
-      if (driverError) {
-        console.error("Failed to fetch driver UUID:", driverError);
-        return;
-      }
-
-      if (!driver?.id) {
-        console.error("Driver record not found for user:", userId);
-        return;
-      }
-
+      if (driverError || !driver?.id) return;
       setDriverId(driver.id);
 
-      // Then get the user name
       const { data: user, error: userError } = await supabase
         .from("users")
         .select("full_name")
         .eq("id", userId)
         .single();
-
-      if (userError) {
-        console.error("Failed to fetch user name:", userError);
-        return;
-      }
-
-      setFetchedDriverName(user?.full_name || "");
+      if (!userError && user?.full_name) setDriverName(user.full_name);
     };
-
     fetchDriverData();
   }, []);
 
-  // Subscribe to driver's location updates
+  // Fetch driver-specific deliveries
+  const fetchDriverDeliveries = async (driverId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("deliveries")
+        .select("*")
+        .eq("assigned_driver", driverId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const transformed = (data || []).map((d: any) => ({
+        id: d.id,
+        refNo: d.ref_no,
+        customer: d.customer_name,
+        address: d.address,
+        status: mapStatus(d.status),
+        driver_id: d.driver_id,
+        paymentType: d.payment_type,
+        amount: d.total_amount,
+      }));
+
+      setDeliveries(transformed);
+    } catch (err: any) {
+      toast.error(`Failed to fetch deliveries: ${err.message}`);
+    }
+  };
+
+  // Subscribe to driver deliveries updates
+  useEffect(() => {
+    if (!driverId) return;
+    fetchDriverDeliveries(driverId);
+
+    const channel = supabase
+      .channel(`driver-deliveries-${driverId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "deliveries",
+          filter: `driver_id=eq.${driverId}`,
+        },
+        () => fetchDriverDeliveries(driverId)
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [driverId]);
+
+  // Start GPS uploader
+  useGPSUploader();
+
+  // Subscribe to driver location updates
   useEffect(() => {
     if (!driverId) return;
 
@@ -119,12 +149,10 @@ export function DriverDashboard({
         .select("last_lat, last_lng")
         .eq("id", driverId)
         .single();
-
       if (!error && data.last_lat && data.last_lng) {
         setDriverLocation([data.last_lat, data.last_lng]);
       }
     };
-
     fetchInitialLocation();
 
     const channel = supabase
@@ -139,19 +167,15 @@ export function DriverDashboard({
         },
         (payload) => {
           const { last_lat, last_lng } = payload.new;
-          if (last_lat && last_lng) {
-            setDriverLocation([last_lat, last_lng]);
-          }
+          if (last_lat && last_lng) setDriverLocation([last_lat, last_lng]);
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [driverId]);
 
-  const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
+  const selectedDelivery = deliveries.find(d => d.id === selectedDeliveryId);
 
   const defaultIcon = new L.Icon({
     iconUrl: markerIcon,
@@ -162,37 +186,21 @@ export function DriverDashboard({
     shadowSize: [41, 41],
   });
 
-  // Auto-pan map when live GPS updates occur
-  useEffect(() => {
-    if (driverLocation && mapRef.current && typeof mapRef.current.getZoom === 'function') {
-      mapRef.current.setView(driverLocation, mapRef.current.getZoom());
-    }
-  }, [driverLocation]);
-
-  // New effect to use PanToSelectedDriver for better panning management
-  const selectedDriverForPan = driverLocation ? { location: { lat: driverLocation[0], lng: driverLocation[1] } } : null;
-
   const getStatusColor = (status: Delivery["status"]) => {
     switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "assigned":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "in-transit":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      case "delivered":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "returned":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+      case "pending": return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "assigned": return "bg-blue-100 text-blue-800 border-blue-200";
+      case "in-transit": return "bg-orange-100 text-orange-800 border-orange-200";
+      case "delivered": return "bg-green-100 text-green-800 border-green-200";
+      case "returned": return "bg-red-100 text-red-800 border-red-200";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
-        {/* Header */}
+        {/* HEADER */}
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
@@ -200,7 +208,6 @@ export function DriverDashboard({
               <h1 className="text-[#222B2D] dark:text-white">Driver Dashboard</h1>
             </div>
             <div className="flex items-center gap-2">
-              {/* Profile Icon with Tooltip */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon">
@@ -208,33 +215,19 @@ export function DriverDashboard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{fetchedDriverName || driverName}</p>
+                  <p>{driverName}</p>
                 </TooltipContent>
               </Tooltip>
-              {/* Dark Mode Toggle */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onToggleDarkMode}
-              >
-                {isDarkMode ? (
-                  <Sun className="w-5 h-5" />
-                ) : (
-                  <Moon className="w-5 h-5" />
-                )}
+              <Button variant="ghost" size="icon" onClick={onToggleDarkMode}>
+                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </Button>
-              {/* Logout */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onLogout}
-                className="text-red-600"
-              >
+              <Button variant="ghost" size="icon" onClick={onLogout} className="text-red-600">
                 <LogOut className="w-5 h-5" />
               </Button>
             </div>
           </div>
         </header>
+
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
@@ -248,7 +241,7 @@ export function DriverDashboard({
             />
           ) : (
             <>
-              {/* MAP VIEW */}
+              {/* MAP */}
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-4">
                   <MapContainer
@@ -261,9 +254,10 @@ export function DriverDashboard({
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                       attribution="© OpenStreetMap contributors"
                     />
-
-                    <PanToSelectedDriver selectedDriver={selectedDriverForPan} role = "driver"/>
-
+                    <PanToSelectedDriver
+                      selectedDriver={driverLocation ? { location: { lat: driverLocation[0], lng: driverLocation[1] } } : null}
+                      role="driver"
+                    />
                     {driverLocation && (
                       <Marker position={driverLocation} icon={defaultIcon}>
                         <Popup>Your current location</Popup>
@@ -273,9 +267,8 @@ export function DriverDashboard({
                 </CardContent>
               </Card>
 
-              {/* DELIVERY LIST */}
+              {/* DELIVERIES */}
               <h3 className="text-[#222B2D] dark:text-white mb-3">Assigned Deliveries</h3>
-
               {deliveries.length === 0 ? (
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-8 text-center">
@@ -285,10 +278,7 @@ export function DriverDashboard({
                 </Card>
               ) : (
                 deliveries.map((delivery) => (
-                  <Card
-                    key={delivery.id}
-                    className="border-0 shadow-sm hover:shadow-md transition"
-                  >
+                  <Card key={delivery.id} className="border-0 shadow-sm hover:shadow-md transition">
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
                         <div>
@@ -313,16 +303,13 @@ export function DriverDashboard({
                         </div>
                       )}
 
-                      {/* Action Buttons */}
+                      {/* ACTION BUTTONS */}
                       <div className="flex gap-2 pt-2">
                         {delivery.status === "assigned" && (
                           <Button
                             size="sm"
                             className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-                            onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                              e.stopPropagation();
-                              onUpdateStatus(delivery.id, "in-transit");
-                            }}
+                            onClick={() => onUpdateStatus(delivery.id, "in-transit")}
                           >
                             Accept Assignment
                           </Button>
@@ -331,10 +318,7 @@ export function DriverDashboard({
                           <Button
                             size="sm"
                             className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateStatus(delivery.id, "delivered");
-                            }}
+                            onClick={() => onUpdateStatus(delivery.id, "delivered")}
                           >
                             Confirm Delivery
                           </Button>
@@ -343,10 +327,7 @@ export function DriverDashboard({
                           size="sm"
                           variant="outline"
                           className="flex-1"
-                          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                            e.stopPropagation();
-                            setSelectedDeliveryId(delivery.id);
-                          }}
+                          onClick={() => setSelectedDeliveryId(delivery.id)}
                         >
                           View Details
                         </Button>
@@ -358,19 +339,6 @@ export function DriverDashboard({
             </>
           )}
         </main>
-
-        {/* ROUTE BUTTON */}
-        {!selectedDelivery && deliveries.length > 0 && (
-          <div className="fixed bottom-6 right-6">
-            <Button
-              size="icon"
-              className="w-14 h-14 rounded-full bg-[#27AE60] hover:bg-[#229954] text-white shadow-lg"
-              onClick={() => toast.info("Route map coming soon...")}
-            >
-              <Navigation className="w-6 h-6" />
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -1,4 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react"
+import { autoAssignRoutes } from "../lib/supabase";
+import { toast } from "sonner";
+;
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -168,7 +171,6 @@ export function RouteOptimizationPage() {
     console.error("Failed to geocode delivery:", delivery.address, err);
   }
 };
-
   
 useEffect(() => {
   const fetchAndGeocodeDeliveries = async () => {
@@ -400,27 +402,66 @@ useEffect(() => {
         return "text-gray-600";
     }
   };
+// ------------------ Auto Assign Handler ------------------
+  const handleAutoAssign = async () => {
+  try {
+    toast.info("Assigning nearest deliveries to drivers...");
+
+    const { ok, data } = await autoAssignRoutes();
+
+    if (!ok) {
+      toast.error(data.error || "Auto-assign failed");
+      return;
+    }
+
+    toast.success("Auto assignment completed!");
+    console.log("Assignments:", data.assignments);
+
+    // OPTIONAL: refresh local UI
+    // await fetchDrivers();
+    // await fetchAndGeocodeDeliveries();
+  } catch (error) {
+    console.error("Auto assign error:", error);
+    toast.error("An error occurred");
+  }
+  };
+
+  useEffect(() => {
+  handleAutoAssign();
+}, []);
+
 
   // ------------------ Render ------------------
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-[#222B2D] dark:text-white mb-2">
-            Driver Management & Route Optimization
-          </h1>
-          <p className="text-[#222B2D]/60 dark:text-white/60">
-            Optimize routes and manage driver assignments efficiently
-          </p>
-        </div>
+  <div className="space-y-6">
+    {/* Page Header */}
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 className="text-[#222B2D] dark:text-white mb-2">
+          Driver Management & Route Optimization
+        </h1>
+        <p className="text-[#222B2D]/60 dark:text-white/60">
+          Optimize routes and manage driver assignments efficiently
+        </p>
+      </div>
 
+      {/*  Both buttons wrapped properly */}
+      <div className="flex gap-3">
         <Button onClick={() => setShowOptimizeModal(true)} className="gap-2">
           <Zap className="w-4 h-4" />
           Optimize Routes
         </Button>
+
+        <Button
+          onClick={handleAutoAssign}
+          className="gap-2 bg-[#27AE60] text-white"
+        >
+          <Truck className="w-4 h-4" />
+          Auto Assign
+        </Button>
       </div>
+    </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
