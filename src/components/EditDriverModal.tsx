@@ -127,10 +127,8 @@ export function EditDriverModal({
             <Input
               id="name"
               value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              required
+              readOnly
+            
             />
           </div>
 
@@ -140,10 +138,7 @@ export function EditDriverModal({
               id="email"
               type="email"
               value={formData.email}
-              onChange={(e) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              required
+             readOnly
             />
           </div>
 
@@ -153,15 +148,13 @@ export function EditDriverModal({
               id="phone"
               type="tel"
               value={formData.phone}
-              onChange={(e) =>
-                setFormData({ ...formData, phone: e.target.value })
-              }
-              required
+              readOnly
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="vehicle">Vehicle Type</Label>
+            {/* Vehicle Type is the ONLY editable field */}
             <Select
               value={formData.vehicle}
               onValueChange={(value) =>
@@ -173,7 +166,7 @@ export function EditDriverModal({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Motorcycle">Motorcycle</SelectItem>
-                <SelectItem value="Sedan">Sedan</SelectItem>
+                <SelectItem value="Car">Car</SelectItem>
                 <SelectItem value="Van">Van</SelectItem>
                 <SelectItem value="Truck">Truck</SelectItem>
               </SelectContent>
