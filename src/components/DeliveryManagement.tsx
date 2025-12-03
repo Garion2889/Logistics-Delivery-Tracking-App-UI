@@ -32,7 +32,6 @@ interface Delivery {
   refNo: string;
   customer: string;
   address: string;
-  paymentType: "COD" | "Paid";
   status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
   driver?: string;
   createdAt: string;
@@ -137,7 +136,6 @@ export function DeliveryManagement({
                   <TableHead>Ref No.</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Address</TableHead>
-                  <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -150,18 +148,6 @@ export function DeliveryManagement({
                     <TableCell>{delivery.customer}</TableCell>
                     <TableCell className="max-w-xs truncate">
                       {delivery.address}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={delivery.paymentType === "COD" ? "outline" : "default"}
-                        className={
-                          delivery.paymentType === "COD"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-green-100 text-green-700"
-                        }
-                      >
-                        {delivery.paymentType}
-                      </Badge>
                     </TableCell>
                     <TableCell>{getStatusBadge(delivery.status)}</TableCell>
                     <TableCell>
@@ -239,16 +225,6 @@ export function DeliveryManagement({
                 {delivery.address}
               </p>
               <div className="flex items-center gap-2">
-                <Badge
-                  variant={delivery.paymentType === "COD" ? "outline" : "default"}
-                  className={
-                    delivery.paymentType === "COD"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-green-100 text-green-700"
-                  }
-                >
-                  {delivery.paymentType}
-                </Badge>
                 {delivery.driver && (
                   <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
                     Driver: {delivery.driver}
