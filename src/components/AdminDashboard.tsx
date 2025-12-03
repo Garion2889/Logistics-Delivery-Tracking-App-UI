@@ -340,9 +340,9 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-center">
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={400}>
                   <PieChart>
-                    <Pie data={deliveryStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    <Pie data={deliveryStatusData} cx="50%" cy="50%" innerRadius={100} outerRadius={140} paddingAngle={5} dataKey="value">
                       {deliveryStatusData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                     </Pie>
                   </PieChart>
@@ -368,7 +368,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     </CardHeader>
 
     <CardContent className="p-0">
-      <div className="w-full relative" style={{ height: "365px" }}>
+      <div className="w-full relative" style={{ height: "460px" }}>
         <MapContainer
           center={
             selectedDriver?.latitude && selectedDriver?.longitude
@@ -462,26 +462,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
 
       </div>
 
-      {/* Pending Orders */}
-      <Card className="border-0 shadow-sm mt-6">
-         <CardHeader><CardTitle>Pending Orders</CardTitle></CardHeader>
-         <CardContent>
-             <div className="space-y-2">
-                {pendingDeliveries.map(order => (
-                    <div key={order.id} className="flex justify-between items-center p-3 border rounded-lg hover:bg-gray-50">
-                        <div>
-                            <p className="font-medium">{order.ref_no} - {order.customer_name}</p>
-                            <p className="text-xs text-gray-500">{order.address}</p>
-                        </div>
-                        <Button size="sm" variant="outline" onClick={() => handleAssignDriver(order)}>
-                            <UserPlus className="w-4 h-4 mr-2" /> Assign Driver
-                        </Button>
-                    </div>
-                ))}
-                {pendingDeliveries.length === 0 && <p className="text-center text-gray-500 py-4">No pending orders.</p>}
-             </div>
-         </CardContent>
-      </Card>
+     
 
       <AssignDriverModal
         open={assignModalOpen}
