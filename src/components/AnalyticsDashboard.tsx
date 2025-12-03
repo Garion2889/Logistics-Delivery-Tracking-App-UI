@@ -282,8 +282,8 @@ export function AnalyticsDashboard() {
         <KpiCard
             title="Success Rate"
             value={`${kpiStats.success_rate}%`}
-            icon={<CheckCircle2 className="w-5 h-5 text-purple-600" />}
-            colorBg="bg-purple-50 dark:bg-purple-900/20"
+            icon={<CheckCircle2 className="w-5 h-5 text-green-600" />}
+            colorBg="bg-green-50 dark:bg-green-900/20"
             loading={isLoading}
         />
         <KpiCard
@@ -297,10 +297,9 @@ export function AnalyticsDashboard() {
 
       {/* --- TABS & CHARTS --- */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="drivers">Drivers</TabsTrigger>
-          <TabsTrigger value="regions">Regions</TabsTrigger>
         </TabsList>
 
         {/* 1. OVERVIEW TAB */}

@@ -143,22 +143,6 @@ export function DeliveryDetail({ delivery, onClose }: DeliveryDetailProps) {
               </div>
               <Separator />
               <div className="flex items-start gap-3">
-                <CreditCard className="w-5 h-5 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                    Payment Method
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-[#222B2D] dark:text-white">
-                      {delivery.paymentType}
-                    </p>
-                    {delivery.amount && (
-                      <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                        ₱{delivery.amount.toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                </div>
               </div>
               {delivery.driver && (
                 <>

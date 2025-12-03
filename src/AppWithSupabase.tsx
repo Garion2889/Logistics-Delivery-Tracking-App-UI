@@ -189,6 +189,7 @@ export default function AppWithSupabase() {
     const mapping: Record<Delivery['status'], string> = {
       'pending': 'created',
       'assigned': 'dispatched',
+      'picked_up': 'picked_up',
       'in-transit': 'in_transit',
       'delivered': 'delivered',
       'returned': 'returned',

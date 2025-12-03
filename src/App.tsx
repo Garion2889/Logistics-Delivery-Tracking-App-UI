@@ -34,6 +34,7 @@ interface Delivery {
   status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
   driver?: string;
   createdAt: string;
+  updatedAt: string;
   phone?: string;
   amount?: number;
   timeline?: {
@@ -448,6 +449,7 @@ const handleDeactivateDriver = async (driverId: string) => {
         status: mapStatus(d.status),
         driver: d.driver_info?.user_info?.full_name,
         createdAt: new Date(d.created_at).toLocaleString(),
+        updateAt: new Date(d.updated_at).toLocaleString(),
         phone: d.customer_phone,
         amount: d.total_amount,
       }));

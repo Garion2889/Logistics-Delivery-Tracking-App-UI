@@ -9,7 +9,6 @@ interface Driver {
   email: string;
   phone: string;
   status: "active" | "inactive" | "on-break";
-  rating: number;
   completedDeliveries: number;
   avatar?: string;
   vehicle?: string;
@@ -19,7 +18,6 @@ interface Driver {
 interface DriverCardProps {
   driver: Driver;
   onEdit: (driverId: string) => void; // ← ADD THIS
-  onDeactivate: (driverId: string) => void;
   onViewDetails: (driverId: string) => void;
   isDarkMode?: boolean;
 }
@@ -27,7 +25,6 @@ interface DriverCardProps {
 export function DriverCard({
   driver,
   onEdit, // ← ADD THIS
-  onDeactivate,
   onViewDetails,
   isDarkMode = false,
 }: DriverCardProps) {
@@ -85,12 +82,6 @@ export function DriverCard({
               <h3 className="text-sm font-semibold text-[#222B2D] dark:text-white truncate">
                 {driver.name}
               </h3>
-              <div className="flex items-center gap-1 mt-0.5">
-                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                <span className="text-xs font-medium text-[#222B2D] dark:text-white">
-                  {driver.rating.toFixed(1)}
-                </span>
-              </div>
             </div>
           </div>
           {/* Status Badge - Moved to top right */}

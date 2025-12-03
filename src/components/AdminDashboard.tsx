@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Package, Truck, CheckCircle2, RotateCcw, UserPlus, MapPin } from "lucide-react";
+import { Package, Truck, CheckCircle2, RotateCcw, UserPlus, MapPin, Users } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -19,7 +19,6 @@ interface DashboardStats {
   pendingOrders: number;
   activeDeliveries: number;
   completedDeliveries: number;
-  returns: number;
   successRate: number;
 }
 
@@ -37,6 +36,7 @@ interface LiveDriverLocation {
 interface Driver {
   id?: string;
   name?: string;
+  status?: string;
 }
 
 interface PendingDelivery {
@@ -125,7 +125,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     const fetchPendingDeliveries = async () => {
       const { data, error } = await supabase
         .from('deliveries')
-        .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at, latitude, longitude')
+        .select('id, ref_no, customer_name, address, status, assigned_driver, created_at, latitude, longitude')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
         .limit(5);
@@ -140,8 +140,8 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     const fetchAvailableDrivers = async () => {
       const { data, error } = await supabase
         .from('drivers')
-        .select('id, name, email, vehicle_type, plate_number, status')
-        .in('status', ['online', 'on_delivery']);
+        .select('id, name , status')
+        .in('status', ['online', 'Offline']);
 
       if (error) {
         console.error("Failed to fetch available drivers:", error);
@@ -151,9 +151,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       const formattedDrivers: DriverOption[] = (data || []).map(d => ({
         id: d.id,
         name: d.name || 'Unknown Driver',
-        email: d.email || '',
-        vehicle: `${d.vehicle_type} - ${d.plate_number || 'No plate'}`,
-        status: d.status as "online" | "offline",
+        status: d.status as "online" | "Offline",
         activeDeliveries: 0,
       }));
       setAvailableDrivers(formattedDrivers);
@@ -290,14 +288,20 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
     { name: "In Transit", value: stats.activeDeliveries, color: "#3498DB" },
     { name: "Pending", value: stats.pendingOrders, color: "#F39C12" },
-    { name: "Returned", value: stats.returns, color: "#E74C3C" },
   ];
 
   const kpiCards = [
     { title: "Pending Orders", value: stats.pendingOrders, icon: Package, color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
     { title: "Active Deliveries", value: stats.activeDeliveries, icon: Truck, color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
     { title: "Completed", value: stats.completedDeliveries, icon: CheckCircle2, color: "text-[#27AE60]", bgColor: "bg-green-50 dark:bg-green-900/20" },
-    { title: "Returns", value: stats.returns, icon: RotateCcw, color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
+    {
+  title: "Online Drivers",
+  value: availableDrivers.filter(d => d.status === "online").length,
+  icon: Users,
+  color: "text-purple-600",
+  bgColor: "bg-purple-50 dark:bg-purple-900/20",
+}
+
   ];
 
   return (

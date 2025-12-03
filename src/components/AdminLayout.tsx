@@ -51,7 +51,6 @@ export function AdminLayout({
     { id: "tracking", label: "Live Tracking", icon: MapPin },
     { id: "routes", label: "Route Optimization", icon: Route },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "returns", label: "Returns", icon: RotateCcw, badge: 3 },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -143,42 +142,6 @@ export function AdminLayout({
               </Sheet>
 
               <div className="flex items-center gap-2 ml-auto">
-                {/* Notifications */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="relative text-[#222B2D] dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
-                    >
-                      <Bell className="w-5 h-5" />
-                      <span className="absolute top-1 right-1 w-2 h-2 bg-[#27AE60] rounded-full"></span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-80 bg-white dark:bg-[#1a2123] border-gray-200 dark:border-gray-700">
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                      <h3 className="text-[#222B2D] dark:text-white">Notifications</h3>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      <div className="text-sm">
-                        <p className="text-[#222B2D] dark:text-white">
-                          New delivery assigned
-                        </p>
-                        <p className="text-[#222B2D]/60 dark:text-white/60 text-xs">
-                          5 minutes ago
-                        </p>
-                      </div>
-                      <div className="text-sm">
-                        <p className="text-[#222B2D] dark:text-white">
-                          Return request received
-                        </p>
-                        <p className="text-[#222B2D]/60 dark:text-white/60 text-xs">
-                          1 hour ago
-                        </p>
-                      </div>
-                    </div>
-                  </DropdownMenuContent>
-                </DropdownMenu>
 
                 {/* Dark Mode Toggle - FIXED ICON COLOR */}
                 <Button
