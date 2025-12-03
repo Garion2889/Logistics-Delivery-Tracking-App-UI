@@ -12,12 +12,20 @@ import {
   DollarSign,
 } from "lucide-react";
 
+type DeliveryStatus =
+  | "pending"
+  | "assigned"
+  | "picked_up"
+  | "in-transit"
+  | "delivered"
+  | "returned";
+
 interface Delivery {
   id: string;
   refNo: string;
   customer: string;
   address: string;
-  status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
+  status: DeliveryStatus;
   paymentType: "COD" | "Paid";
   amount?: number;
   phone?: string;
@@ -26,7 +34,7 @@ interface Delivery {
 interface DriverDeliveryDetailProps {
   delivery: Delivery;
   onBack: () => void;
-  onUpdateStatus: (status: Delivery["status"]) => void;
+  onUpdateStatus: (status: DeliveryStatus) => void;
   onUploadPOD: () => void;
 }
 
@@ -36,10 +44,11 @@ export function DriverDeliveryDetail({
   onUpdateStatus,
   onUploadPOD,
 }: DriverDeliveryDetailProps) {
-  const getStatusColor = (status: Delivery["status"]) => {
-    const colors = {
+  const getStatusColor = (status: DeliveryStatus) => {
+    const colors: Record<DeliveryStatus, string> = {
       pending: "bg-orange-100 text-orange-700",
       assigned: "bg-blue-100 text-blue-700",
+      picked_up: "bg-yellow-100 text-yellow-700",
       "in-transit": "bg-purple-100 text-purple-700",
       delivered: "bg-green-100 text-green-700",
       returned: "bg-red-100 text-red-700",
@@ -50,11 +59,7 @@ export function DriverDeliveryDetail({
   return (
     <div className="space-y-4">
       {/* Back Button */}
-      <Button
-        variant="ghost"
-        onClick={onBack}
-        className="mb-2"
-      >
+      <Button variant="ghost" onClick={onBack} className="mb-2">
         <ArrowLeft className="w-4 h-4 mr-2" />
         Back to Deliveries
       </Button>
@@ -72,7 +77,8 @@ export function DriverDeliveryDetail({
               </p>
             </div>
             <Badge className={getStatusColor(delivery.status)} variant="outline">
-              {delivery.status.charAt(0).toUpperCase() + delivery.status.slice(1)}
+              {delivery.status.charAt(0).toUpperCase() +
+                delivery.status.slice(1)}
             </Badge>
           </div>
         </CardContent>
@@ -87,7 +93,9 @@ export function DriverDeliveryDetail({
             </p>
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-              <p className="text-[#222B2D] dark:text-white">{delivery.address}</p>
+              <p className="text-[#222B2D] dark:text-white">
+                {delivery.address}
+              </p>
             </div>
           </div>
 
@@ -133,7 +141,9 @@ export function DriverDeliveryDetail({
             <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-[#27AE60]" />
-                <span className="text-[#27AE60]">Payment Already Received</span>
+                <span className="text-[#27AE60]">
+                  Payment Already Received
+                </span>
               </div>
             </div>
           )}
@@ -144,11 +154,21 @@ export function DriverDeliveryDetail({
       <div className="space-y-3">
         {delivery.status === "assigned" && (
           <Button
-            className="w-full bg-[#27AE60] hover:bg-[#229954 text-white h-12"
+            className="w-full bg-[#27AE60] hover:bg-[#229954] text-white h-12"
+            onClick={() => onUpdateStatus("picked_up")}
+          >
+            <Package className="w-5 h-5 mr-2" />
+            Accept Assignment
+          </Button>
+        )}
+
+        {delivery.status === "picked_up" && (
+          <Button
+            className="w-full bg-[#27AE60] hover:bg-[#229954] text-white h-12"
             onClick={() => onUpdateStatus("in-transit")}
           >
             <Package className="w-5 h-5 mr-2" />
-            Mark as Picked Up
+            Start Delivery
           </Button>
         )}
 
@@ -161,6 +181,7 @@ export function DriverDeliveryDetail({
               <CheckCircle2 className="w-5 h-5 mr-2" />
               Confirm Delivery
             </Button>
+
             <Button
               variant="outline"
               className="w-full text-red-600 h-12"
@@ -172,7 +193,8 @@ export function DriverDeliveryDetail({
           </>
         )}
 
-        {(delivery.status === "delivered" || delivery.status === "returned") && (
+        {(delivery.status === "delivered" ||
+          delivery.status === "returned") && (
           <Button
             variant="outline"
             className="w-full h-12"

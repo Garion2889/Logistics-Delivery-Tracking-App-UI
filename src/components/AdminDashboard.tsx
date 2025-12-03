@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -23,7 +22,7 @@ interface DashboardStats {
 }
 
 interface AdminDashboardProps {
-  stats: DashboardStats;
+  stats: DashboardStats; // still supported from parent
 }
 
 interface LiveDriverLocation {
@@ -32,9 +31,14 @@ interface LiveDriverLocation {
   longitude: number;
   recorded_at: string;
 }
+
 interface Driver {
   id?: string;
   name?: string;
+  email?: string;
+  vehicle_type?: string;
+  plate_number?: string;
+  status?: "online" | "offline" | "on_delivery";
 }
 
 interface PendingDelivery {
@@ -58,7 +62,7 @@ interface DriverOption {
 }
 
 const stringToColor = (str?: string) => {
-  if (!str) return "#888"; // fallback color for missing names
+  if (!str) return "#888";
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
@@ -81,8 +85,6 @@ const getDriverIcon = (driver: { name?: string }) => {
   });
 };
 
-
-
 export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<LiveDriverLocation | null>(null);
@@ -91,6 +93,9 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [availableDrivers, setAvailableDrivers] = useState<DriverOption[]>([]);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState<PendingDelivery | null>(null);
+
+  // ✅ local stats so admin auto-updates on delivery status change
+  const [liveStats, setLiveStats] = useState<DashboardStats>(stats);
 
   // Fetch driver info for name initials in markers
   useEffect(() => {
@@ -102,58 +107,106 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       }
 
       const driverMap: Record<string, Driver> = {};
-    data.forEach((driver: any) => {
-      driverMap[driver.id] = { id: driver.id, name: driver.name };
-    });
+      (data || []).forEach((driver: any) => {
+        driverMap[driver.id] = { id: driver.id, name: driver.name };
+      });
 
-    setDrivers(driverMap);
+      setDrivers(driverMap);
     })();
-  }
-  , []);
+  }, []);
+
+  // ✅ Fetch deliveries stats (counts) — used for realtime UI reflection
+  const fetchStats = async () => {
+    const { data, error } = await supabase
+      .from("deliveries")
+      .select("status");
+
+    if (error) {
+      console.error("Failed to fetch stats:", error);
+      return;
+    }
+
+    const rows = data || [];
+    const pendingOrders = rows.filter(r => r.status === "pending").length;
+    const activeDeliveries = rows.filter(r => r.status === "assigned" || r.status === "picked_up" || r.status === "in-transit" || r.status === "in_transit").length;
+    const completedDeliveries = rows.filter(r => r.status === "delivered").length;
+    const returns = rows.filter(r => r.status === "returned").length;
+
+    const totalFinished = completedDeliveries + returns;
+    const successRate = totalFinished > 0 ? Math.round((completedDeliveries / totalFinished) * 100) : 0;
+
+    setLiveStats({
+      pendingOrders,
+      activeDeliveries,
+      completedDeliveries,
+      returns,
+      successRate,
+    });
+  };
 
   // Fetch pending deliveries and available drivers
+  const fetchPendingDeliveries = async () => {
+    const { data, error } = await supabase
+      .from("deliveries")
+      .select("id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.error("Failed to fetch pending deliveries:", error);
+      return;
+    }
+
+    setPendingDeliveries(data || []);
+  };
+
+  const fetchAvailableDrivers = async () => {
+    const { data, error } = await supabase
+      .from("drivers")
+      .select("id, name, email, vehicle_type, plate_number, status")
+      .in("status", ["online", "on_delivery"]);
+
+    if (error) {
+      console.error("Failed to fetch available drivers:", error);
+      return;
+    }
+
+    const formattedDrivers: DriverOption[] = (data || []).map((d: any) => ({
+      id: d.id,
+      name: d.name || "Unknown Driver",
+      email: d.email || "",
+      vehicle: `${d.vehicle_type} - ${d.plate_number || "No plate"}`,
+      status: d.status as "online" | "offline",
+      activeDeliveries: 0,
+    }));
+
+    setAvailableDrivers(formattedDrivers);
+  };
+
   useEffect(() => {
-    const fetchPendingDeliveries = async () => {
-      const { data, error } = await supabase
-        .from('deliveries')
-        .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(5); // Show only recent 5 pending deliveries
-
-      if (error) {
-        console.error("Failed to fetch pending deliveries:", error);
-        return;
-      }
-
-      setPendingDeliveries(data || []);
-    };
-
-    const fetchAvailableDrivers = async () => {
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('id, name, email, vehicle_type, plate_number, status')
-        .in('status', ['online', 'on_delivery']);
-
-      if (error) {
-        console.error("Failed to fetch available drivers:", error);
-        return;
-      }
-
-      const formattedDrivers: DriverOption[] = (data || []).map(d => ({
-        id: d.id,
-        name: d.name || 'Unknown Driver',
-        email: d.email || '',
-        vehicle: `${d.vehicle_type} - ${d.plate_number || 'No plate'}`,
-        status: d.status as "online" | "offline",
-        activeDeliveries: 0, // We'll calculate this if needed
-      }));
-
-      setAvailableDrivers(formattedDrivers);
-    };
-
     fetchPendingDeliveries();
     fetchAvailableDrivers();
+    fetchStats();
+  }, []);
+
+  // ✅ Subscribe to delivery changes so KPI + Chart refresh live
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-delivery-status")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deliveries" },
+        () => {
+          fetchPendingDeliveries();
+          fetchStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Subscribe to real-time driver GPS updates
@@ -191,53 +244,53 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       return;
     }
 
-    // Sort by latest recorded_at descending
     const sortedDrivers = [...driverLocations].sort(
-      (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+      (a, b) =>
+        new Date(b.recorded_at).getTime() -
+        new Date(a.recorded_at).getTime()
     );
 
     setSelectedDriver(sortedDrivers[0]);
   }, [driverLocations]);
 
   const deliveryStatusData = [
-    { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
-    { name: "In Transit", value: stats.activeDeliveries, color: "#3498DB" },
-    { name: "Pending", value: stats.pendingOrders, color: "#F39C12" },
-    { name: "Returned", value: stats.returns, color: "#E74C3C" },
+    { name: "Completed", value: liveStats.completedDeliveries, color: "#27AE60" },
+    { name: "In Transit", value: liveStats.activeDeliveries, color: "#3498DB" },
+    { name: "Pending", value: liveStats.pendingOrders, color: "#F39C12" },
+    { name: "Returned", value: liveStats.returns, color: "#E74C3C" },
   ];
 
   const kpiCards = [
     {
       title: "Pending Orders",
-      value: stats.pendingOrders,
+      value: liveStats.pendingOrders,
       icon: Package,
       color: "text-orange-600",
       bgColor: "bg-orange-50 dark:bg-orange-900/20",
     },
     {
       title: "Active Deliveries",
-      value: stats.activeDeliveries,
+      value: liveStats.activeDeliveries,
       icon: Truck,
       color: "text-blue-600",
       bgColor: "bg-blue-50 dark:bg-blue-900/20",
     },
     {
       title: "Completed",
-      value: stats.completedDeliveries,
+      value: liveStats.completedDeliveries,
       icon: CheckCircle2,
       color: "text-[#27AE60]",
       bgColor: "bg-green-50 dark:bg-green-900/20",
     },
     {
       title: "Returns",
-      value: stats.returns,
+      value: liveStats.returns,
       icon: RotateCcw,
       color: "text-red-600",
       bgColor: "bg-red-50 dark:bg-red-900/20",
     },
   ];
 
-  // Default Leaflet marker icon
   const defaultIcon = new L.Icon({
     iconUrl: markerIcon,
     iconSize: [25, 41],
@@ -247,25 +300,23 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     shadowSize: [41, 41],
   });
 
-  // Handler for opening assign modal
   const handleAssignDriver = (delivery: PendingDelivery) => {
     setSelectedDelivery(delivery);
     setAssignModalOpen(true);
   };
 
-  // Handler for assigning driver
   const handleDriverAssigned = async (driverId: string) => {
     if (!selectedDelivery) return;
 
     try {
       const { error } = await supabase
-        .from('deliveries')
+        .from("deliveries")
         .update({
           assigned_driver: driverId,
-          status: 'assigned',
-          assigned_at: new Date().toISOString()
+          status: "assigned",
+          assigned_at: new Date().toISOString(),
         })
-        .eq('id', selectedDelivery.id);
+        .eq("id", selectedDelivery.id);
 
       if (error) {
         console.error("Failed to assign driver:", error);
@@ -273,8 +324,9 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         return;
       }
 
-      // Update local state
-      setPendingDeliveries(prev => prev.filter(d => d.id !== selectedDelivery.id));
+      setPendingDeliveries((prev) =>
+        prev.filter((d) => d.id !== selectedDelivery.id)
+      );
       setAssignModalOpen(false);
       setSelectedDelivery(null);
 
@@ -329,7 +381,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
           <div className="flex items-center justify-between">
             <CardTitle>Delivery Status</CardTitle>
             <div className="flex items-center gap-1 text-[#27AE60]">
-              <span className="text-sm">{stats.successRate}% Success</span>
+              <span className="text-sm">{liveStats.successRate}% Success</span>
             </div>
           </div>
         </CardHeader>
@@ -353,6 +405,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
               </PieChart>
             </ResponsiveContainer>
           </div>
+
           <div className="grid grid-cols-2 gap-3 mt-4">
             {deliveryStatusData.map((item) => (
               <div key={item.name} className="flex items-center gap-2">
@@ -369,6 +422,35 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         </CardContent>
       </Card>
 
+      {/* Pending Deliveries (quick assign list) */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Pending Deliveries</CardTitle>
+          <Badge variant="outline">{pendingDeliveries.length}</Badge>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {pendingDeliveries.length === 0 ? (
+            <p className="text-sm text-gray-500">No pending deliveries.</p>
+          ) : (
+            pendingDeliveries.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between p-3 rounded-lg border"
+              >
+                <div>
+                  <p className="font-medium">{d.ref_no}</p>
+                  <p className="text-xs text-gray-500">{d.customer_name}</p>
+                </div>
+                <Button size="sm" onClick={() => handleAssignDriver(d)}>
+                  <UserPlus className="w-4 h-4 mr-1" />
+                  Assign
+                </Button>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
       {/* Leaflet Map */}
       <Card className="border-0 shadow-sm">
         <CardHeader>
@@ -376,19 +458,32 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         </CardHeader>
         <CardContent>
           <MapContainer
-            center={selectedDriver ? [selectedDriver.latitude, selectedDriver.longitude] : [14.5995, 120.9842]}
+            center={
+              selectedDriver
+                ? [selectedDriver.latitude, selectedDriver.longitude]
+                : [14.5995, 120.9842]
+            }
             zoom={13}
             style={{ height: "400px", width: "100%" }}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; OpenStreetMap contributors'
+              attribution="&copy; OpenStreetMap contributors"
             />
-            <PanToSelectedDriver 
-              selectedDriver={selectedDriver ? { 
-                location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } 
-              } : null} role = "driver"
+            <PanToSelectedDriver
+              selectedDriver={
+                selectedDriver
+                  ? {
+                      location: {
+                        lat: selectedDriver.latitude,
+                        lng: selectedDriver.longitude,
+                      },
+                    }
+                  : null
+              }
+              role="driver"
             />
+
             {driverLocations.map((driver) => (
               <Marker
                 key={driver.driver_id}
@@ -396,14 +491,25 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
                 icon={getDriverIcon(drivers[driver.driver_id] || {})}
               >
                 <Popup>
-                  <b>Driver:</b>  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
-                  <b>Last update:</b> {new Date(driver.recorded_at).toLocaleTimeString()}
+                  <b>Driver:</b>{" "}
+                  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
+                  <b>Last update:</b>{" "}
+                  {new Date(driver.recorded_at).toLocaleTimeString()}
                 </Popup>
               </Marker>
             ))}
           </MapContainer>
         </CardContent>
       </Card>
+
+      {/* ✅ CORRECT MODAL PROPS */}
+      <AssignDriverModal
+        isOpen={assignModalOpen}
+        onClose={() => setAssignModalOpen(false)}
+        drivers={availableDrivers}
+        deliveryRefNo={selectedDelivery?.ref_no ?? ""}
+        onAssign={handleDriverAssigned}
+      />
     </div>
   );
 }
