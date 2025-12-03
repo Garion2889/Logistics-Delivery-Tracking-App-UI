@@ -168,16 +168,6 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
             Manage driver accounts and assignments
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => setIsAddModalOpen(true)}
-            size="sm"
-            className="bg-[#27AE60] hover:bg-[#229954] text-white"
-          >
-            <Plus className="w-4 h-4 sm:mr-1.5" />
-            <span className="hidden sm:inline">Add Driver</span>
-          </Button>
-        </div>
       </div>
 
       {/* Filters and Search */}
