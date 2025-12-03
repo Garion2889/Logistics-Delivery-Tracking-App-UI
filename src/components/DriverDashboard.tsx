@@ -3,7 +3,7 @@ import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { DriverDeliveryDetail } from "./DriverDeliveryDetail";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -13,7 +13,15 @@ import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "luc
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
-import { PanToSelectedDriver } from "./PanToSelectedDriver";
+
+// Fix default Leaflet icon
+const defaultIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
 
 interface Delivery {
   id: string;
@@ -21,9 +29,11 @@ interface Delivery {
   refNo: string;
   customer: string;
   address: string;
-  status: "pending" | "assigned" | "picked_up" |"in-transit" | "delivered" | "returned";
+  status: "pending" | "assigned" | "picked_up" | "in-transit" | "delivered" | "returned";
   paymentType: "COD" | "Paid";
   amount?: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface DriverDashboardProps {
@@ -32,6 +42,17 @@ interface DriverDashboardProps {
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
+}
+
+// Helper to pan map to driver's location
+function PanToDriver({ location }: { location: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (location) {
+      map.flyTo(location, 15, { animate: true, duration: 1.5 });
+    }
+  }, [location, map]);
+  return null;
 }
 
 export function DriverDashboard({
@@ -48,12 +69,16 @@ export function DriverDashboard({
   const [driverName, setDriverName] = useState<string>("");
   const mapRef = useRef<L.Map | null>(null);
 
+  // ✅ NEW: State for OSRM Route Shape & Active Destination
+  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+  const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
+
   // Map DB status -> dashboard status
   const mapStatus = (dbStatus: string): Delivery["status"] => {
     switch (dbStatus) {
       case "pending": return "pending";
       case "assigned": return "assigned";
-      case "picked_up":
+      case "picked_up": return "picked_up";
       case "in_transit": return "in-transit";
       case "delivered": return "delivered";
       case "returned": return "returned";
@@ -61,7 +86,7 @@ export function DriverDashboard({
     }
   };
 
-  // Fetch driver ID and name
+  // 1. Fetch driver ID and name
   useEffect(() => {
     const fetchDriverData = async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -74,7 +99,7 @@ export function DriverDashboard({
         .eq("user_id", userId)
         .single();
       if (driverError || !driver?.id) return;
-      setDriverId(driver.id); 
+      setDriverId(driver.id);
 
       const { data: user, error: userError } = await supabase
         .from("logistics_users")
@@ -86,7 +111,7 @@ export function DriverDashboard({
     fetchDriverData();
   }, []);
 
-  // Fetch driver-specific deliveries
+  // 2. Fetch driver-specific deliveries
   const fetchDriverDeliveries = async (driverId: string) => {
     try {
       const { data, error } = await supabase
@@ -106,6 +131,8 @@ export function DriverDashboard({
         driver_id: d.driver_id,
         paymentType: d.payment_type,
         amount: d.total_amount,
+        latitude: d.latitude,
+        longitude: d.longitude,
       }));
 
       setDeliveries(transformed);
@@ -113,17 +140,8 @@ export function DriverDashboard({
       toast.error(`Failed to fetch deliveries: ${err.message}`);
     }
   };
-  const handleNextStatus = (currentStatus: Delivery["status"]): Delivery["status"] | null => {
-  switch (currentStatus) {
-    case "assigned": return "picked_up";
-    case "picked_up": return "in-transit";
-    case "in-transit": return "delivered";
-    default: return null;
-  }
-};
 
-
-  // Subscribe to driver deliveries updates
+  // 3. Subscribe to driver deliveries updates
   useEffect(() => {
     if (!driverId) return;
     fetchDriverDeliveries(driverId);
@@ -136,19 +154,19 @@ export function DriverDashboard({
           event: "UPDATE",
           schema: "public",
           table: "deliveries",
-          filter: `driver_id=eq.${driverId}`,
+          filter: `assigned_driver=eq.${driverId}`,
         },
         () => fetchDriverDeliveries(driverId)
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => { supabase.removeChannel(channel); };
   }, [driverId]);
 
-  // Start GPS uploader
+  // 4. Start GPS uploader
   useGPSUploader();
 
-  // Subscribe to driver location updates
+  // 5. Subscribe to driver location updates
   useEffect(() => {
     if (!driverId) return;
 
@@ -181,20 +199,97 @@ export function DriverDashboard({
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => { supabase.removeChannel(channel); };
   }, [driverId]);
+
+  // =================================================================
+  // ✅ 6. ROUTING LOGIC (Calculates Route & Destination)
+  // =================================================================
+  useEffect(() => {
+    if (!driverId || !driverLocation || deliveries.length === 0) {
+      setRoutePath([]);
+      setActiveDestination(null);
+      return;
+    }
+
+    const fetchRouteToNextDelivery = async () => {
+      try {
+        // Find next delivery (prioritize in_transit -> picked_up -> assigned)
+        const priorityOrder = ['in-transit', 'picked_up', 'assigned'];
+        let nextDelivery: Delivery | undefined;
+        
+        for (const status of priorityOrder) {
+          nextDelivery = deliveries.find(d => d.status === status);
+          if (nextDelivery) break;
+        }
+
+        if (!nextDelivery) {
+          setRoutePath([]);
+          setActiveDestination(null);
+          return;
+        }
+
+        // Check if delivery has coordinates, geocode if needed
+        let deliveryLat = nextDelivery.latitude;
+        let deliveryLng = nextDelivery.longitude;
+
+        if (!deliveryLat || !deliveryLng) {
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nextDelivery.address)}&limit=1`
+            );
+            const geo = await res.json();
+
+            if (geo.length > 0) {
+              deliveryLat = parseFloat(geo[0].lat);
+              deliveryLng = parseFloat(geo[0].lon);
+
+              // Update Supabase so we don't geocode again
+              await supabase
+                .from("deliveries")
+                .update({ latitude: deliveryLat, longitude: deliveryLng })
+                .eq("id", nextDelivery.id);
+            }
+          } catch (err) {
+            console.error("Failed to geocode delivery:", nextDelivery.address, err);
+          }
+        }
+
+        if (!deliveryLat || !deliveryLng) {
+          setRoutePath([]);
+          setActiveDestination(null);
+          return;
+        }
+
+        // Set Active Destination for Marker
+        setActiveDestination({ lat: deliveryLat, lng: deliveryLng });
+
+        // Fetch route from OSRM
+        const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation[1]},${driverLocation[0]};${deliveryLng},${deliveryLat}?overview=full&geometries=geojson`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.routes && data.routes.length > 0) {
+          // Swap [lng, lat] to [lat, lng] for Leaflet
+          const coordinates = data.routes[0].geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
+          setRoutePath(coordinates);
+        } else {
+          // Fallback to straight line
+          setRoutePath([driverLocation, [deliveryLat, deliveryLng]]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch route:", err);
+        setRoutePath([]);
+      }
+    };
+
+    fetchRouteToNextDelivery();
+  }, [driverId, driverLocation, deliveries]);
 
   const selectedDelivery = deliveries.find(d => d.id === selectedDeliveryId);
 
-  const defaultIcon = new L.Icon({
-    iconUrl: markerIcon,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowUrl: markerShadow,
-    shadowSize: [41, 41],
-  });
-
+  // Helper to cycle status
   const getStatusColor = (status: Delivery["status"]) => {
     switch (status) {
       case "pending": return "bg-yellow-100 text-yellow-800 border-yellow-200";
@@ -209,6 +304,7 @@ export function DriverDashboard({
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
+        
         {/* HEADER */}
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">
@@ -237,6 +333,7 @@ export function DriverDashboard({
           </div>
         </header>
 
+        {/* MAIN CONTENT */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
@@ -250,34 +347,66 @@ export function DriverDashboard({
             />
           ) : (
             <>
-              {/* MAP */}
+              {/* MAP CARD */}
               <Card className="border-0 shadow-sm">
-                <CardContent className="p-4">
-                  <MapContainer
-                    center={driverLocation || [14.5995, 120.9842]}
-                    zoom={13}
-                    style={{ height: "400px", width: "100%" }}
-                    whenReady={(map) => (mapRef.current = map)}
-                  >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution="© OpenStreetMap contributors"
-                    />
-                    <PanToSelectedDriver
-                      selectedDriver={driverLocation ? { location: { lat: driverLocation[0], lng: driverLocation[1] } } : null}
-                      role="driver"
-                    />
-                    {driverLocation && (
-                      <Marker position={driverLocation} icon={defaultIcon}>
-                        <Popup>Your current location</Popup>
-                      </Marker>
+                <CardContent className="p-0">
+                  <div className="h-[400px] w-full relative z-0 rounded-lg overflow-hidden">
+                    <MapContainer
+                      center={driverLocation || [14.5995, 120.9842]}
+                      zoom={13}
+                      style={{ height: "100%", width: "100%" }}
+                      whenReady={(map) => (mapRef.current = map)}
+                    >
+                      <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution="© OpenStreetMap contributors"
+                      />
+                      
+                      <PanToDriver location={driverLocation} />
+
+                      {/* 1. Driver Marker */}
+                      {driverLocation && (
+                        <Marker position={driverLocation} icon={defaultIcon}>
+                          <Popup>You are here</Popup>
+                        </Marker>
+                      )}
+
+                      {/* 2. Destination Marker */}
+                      {activeDestination && (
+                        <Marker 
+                          position={[activeDestination.lat, activeDestination.lng]} 
+                          icon={L.divIcon({
+                            className: "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow-lg",
+                            iconSize: [16, 16]
+                          })}
+                        >
+                          <Popup>Destination</Popup>
+                        </Marker>
+                      )}
+
+                      {/* 3. Route Line */}
+                      {routePath.length > 0 && (
+                        <Polyline
+                          positions={routePath}
+                          color="#3B82F6"
+                          weight={5}
+                          opacity={0.8}
+                        />
+                      )}
+                    </MapContainer>
+                    
+                    {/* Overlay Info */}
+                    {activeDestination && (
+                       <div className="absolute bottom-4 left-4 right-4 bg-white/90 p-3 rounded-lg shadow-lg z-[1000] text-xs border">
+                          <strong>Next Stop:</strong> Calculating route...
+                       </div>
                     )}
-                  </MapContainer>
+                  </div>
                 </CardContent>
               </Card>
 
-              {/* DELIVERIES */}
-              <h3 className="text-[#222B2D] dark:text-white mb-3">Assigned Deliveries</h3>
+              {/* DELIVERIES LIST */}
+              <h3 className="text-[#222B2D] dark:text-white mb-3 font-semibold">Assigned Tasks</h3>
               {deliveries.length === 0 ? (
                 <Card className="border-0 shadow-sm">
                   <CardContent className="p-8 text-center">
@@ -286,76 +415,78 @@ export function DriverDashboard({
                   </CardContent>
                 </Card>
               ) : (
-                deliveries.map((delivery) => (
+                <div className="space-y-4">
+                {deliveries.map((delivery) => (
                   <Card key={delivery.id} className="border-0 shadow-sm hover:shadow-md transition">
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="text-[#222B2D] dark:text-white">{delivery.refNo}</p>
+                          <p className="text-[#222B2D] dark:text-white font-medium">{delivery.refNo}</p>
                           <p className="text-sm text-gray-500">{delivery.customer}</p>
                         </div>
                         <Badge className={getStatusColor(delivery.status)} variant="outline">
-                          {delivery.status.charAt(0).toUpperCase() + delivery.status.slice(1)}
+                          {delivery.status.replace('_', ' ').toUpperCase()}
                         </Badge>
                       </div>
 
                       <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400 mt-1" />
+                        <MapPin className="w-4 h-4 text-gray-400 mt-1 shrink-0" />
                         <p className="text-sm text-gray-500">{delivery.address}</p>
                       </div>
 
                       {delivery.paymentType === "COD" && delivery.amount && (
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
-                          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                            COD: ₱{delivery.amount.toLocaleString()}
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 border border-yellow-100 dark:border-yellow-800">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
+                            💰 Collect COD: ₱{delivery.amount.toLocaleString()}
                           </p>
                         </div>
                       )}
 
                       {/* ACTION BUTTONS */}
                       <div className="flex gap-2 pt-2">
-  {delivery.status === "assigned" && (
-    <Button
-      size="sm"
-      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-      onClick={() => onUpdateStatus(delivery.id, "picked_up")}
-    >
-      Accept Assignment
-    </Button>
-  )}
+                        {delivery.status === "assigned" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+                            onClick={() => onUpdateStatus(delivery.id, "picked_up")}
+                          >
+                            Accept / Pick Up
+                          </Button>
+                        )}
 
-  {delivery.status === "picked_up" && (
-    <Button
-      size="sm"
-      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-      onClick={() => onUpdateStatus(delivery.id, "in-transit")}
-    >
-      Start Delivery
-    </Button>
-  )}
+                        {delivery.status === "picked_up" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => onUpdateStatus(delivery.id, "in-transit")}
+                          >
+                            Start Delivery
+                          </Button>
+                        )}
 
-  {delivery.status === "in-transit" && (
-    <Button
-      size="sm"
-      className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
-      onClick={() => onUpdateStatus(delivery.id, "delivered")}
-    >
-      Confirm Delivery
-    </Button>
-  )}
+                        {delivery.status === "in-transit" && (
+                          <Button
+                            size="sm"
+                            className="flex-1 bg-[#27AE60] hover:bg-[#229954] text-white"
+                            onClick={() => onUpdateStatus(delivery.id, "delivered")}
+                          >
+                            Confirm Delivery
+                          </Button>
+                        )}
 
-  <Button
-    size="sm"
-    variant="outline"
-    className="flex-1"
-    onClick={() => setSelectedDeliveryId(delivery.id)}
-  >
-    View Details
-  </Button>
-</div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setSelectedDeliveryId(delivery.id)}
+                        >
+                          View Details
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
-                ))
+                ))}
+                </div>
               )}
             </>
           )}
