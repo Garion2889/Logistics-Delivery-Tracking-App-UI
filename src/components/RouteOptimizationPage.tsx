@@ -571,17 +571,12 @@ const formatStatus = (status: string) => {
 
       {/* Both buttons wrapped properly */}
       <div className="flex gap-3">
-        <Button onClick={() => setShowOptimizeModal(true)} className="gap-2">
-          <Zap className="w-4 h-4" />
-          Optimize Routes
-        </Button>
-
         <Button
           onClick={handleAutoAssign}
           className="gap-2 bg-[#27AE60] text-white"
         >
           <Truck className="w-4 h-4" />
-          Auto Assign
+          Auto Assign Routes
         </Button>
       </div>
     </div>
