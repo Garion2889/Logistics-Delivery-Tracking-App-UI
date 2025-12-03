@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -7,7 +7,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -29,7 +29,6 @@ import {
   TrendingUp,
   Navigation2,
 } from "lucide-react";
-import { PanToSelectedDriver } from "./PanToSelectedDriver";
 
 import {
   Select,
@@ -38,6 +37,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+
+// --- Interfaces ---
 
 interface Driver {
   id: string; // uuid
@@ -64,21 +65,50 @@ interface Driver {
 }
 
 interface LocationHistory {
-  location_history_id: string;
-  driver_id: string;
-  lat?: number;
-  lng?: number;
+  location_history_id?: string;
+  driver_id?: string;
+  lat: number;
+  lng: number;
   recorded_at: string;
 }
 
-  const defaultIcon = new L.Icon({
-    iconUrl: markerIcon,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowUrl: markerShadow,
-    shadowSize: [41, 41],
-  });
+interface Delivery {
+  id: string;
+  ref_no: string;
+  customer_name: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  status: string;
+  assigned_driver: string | null;
+}
+
+// --- Icons ---
+
+const defaultIcon = new L.Icon({
+  iconUrl: markerIcon,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowUrl: markerShadow,
+  shadowSize: [41, 41],
+});
+
+// --- Helper: Pan Map ---
+function PanToSelectedDriver({ selectedDriver }: { selectedDriver: Driver | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (selectedDriver?.location) {
+      map.flyTo([selectedDriver.location.lat, selectedDriver.location.lng], 14, {
+        animate: true,
+        duration: 1.5
+      });
+    }
+  }, [selectedDriver, map]);
+  return null;
+}
+
+// ------------------ Main Component ------------------
 
 export function RealTimeTrackingPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
@@ -88,100 +118,51 @@ export function RealTimeTrackingPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [locationHistory, setLocationHistory] = useState<{
-  location: { lat: number; lng: number };
-  recorded_at: string;
-}[]>([]);
+  const [locationHistory, setLocationHistory] = useState<LocationHistory[]>([]);
   const [autoLoggingEnabled, setAutoLoggingEnabled] = useState(true);
 
-const [filterStartDate, setFilterStartDate] = useState<string>("");
-const [filterEndDate, setFilterEndDate] = useState<string>("");
-const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [filterStartDate, setFilterStartDate] = useState<string>("");
+  const [filterEndDate, setFilterEndDate] = useState<string>("");
+  const [playbackIndex, setPlaybackIndex] = useState(0);
 
-// Automatically advance playback when isPlaying changes
-useEffect(() => {
-if (!isPlaying || locationHistory.length === 0) return;
+  // ✅ NEW: State for Routing and Destination
+  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+  const [activeDestination, setActiveDestination] = useState<Delivery | null>(null);
 
-const interval = setInterval(() => {
-setPlaybackIndex((prev) => {
-if (prev >= locationHistory.length - 1) {
-clearInterval(interval);
-return prev;
-}
-return prev + 1;
-});
-}, 1000 / playbackSpeed[0]); // 1 second / speed factor
+  // --- Playback Logic ---
+  useEffect(() => {
+    if (!isPlaying || locationHistory.length === 0) return;
 
-return () => clearInterval(interval);
-}, [isPlaying, playbackSpeed, locationHistory]);
+    const interval = setInterval(() => {
+      setPlaybackIndex((prev) => {
+        if (prev >= locationHistory.length - 1) {
+          setIsPlaying(false); // Stop at end
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 1000 / playbackSpeed[0]);
 
-// Reset playbackIndex when driver changes
-useEffect(() => {
-setPlaybackIndex(0);
-}, [selectedDriver]);
+    return () => clearInterval(interval);
+  }, [isPlaying, playbackSpeed, locationHistory]);
 
-// Current location for map marker highlight
-const currentPlaybackLocation = locationHistory[playbackIndex]?.location;
-useEffect(() => {
-  if (!isPlaying || locationHistory.length === 0) return;
+  // Reset playbackIndex when driver changes
+  useEffect(() => {
+    setPlaybackIndex(0);
+    setRoutePath([]);
+    setActiveDestination(null);
+  }, [selectedDriver]);
 
-  const speed = playbackSpeed[0];
+  // Current location for map marker highlight
+  const currentPlaybackLocation = locationHistory[playbackIndex];
 
-  const interval = setInterval(() => {
-    setPlaybackIndex((prev) => {
-      if (prev >= locationHistory.length - 1) {
-        setIsPlaying(false); // stop at end
-        return prev;
-      }
-      return prev + 1;
-    });
-  }, 1000 / speed);
+  // Handlers for skip buttons
+  const handleSkipBack = () => setPlaybackIndex((prev) => Math.max(prev - 1, 0));
+  const handleSkipForward = () => setPlaybackIndex((prev) => Math.min(prev + 1, locationHistory.length - 1));
 
-  return () => clearInterval(interval);
-}, [isPlaying, playbackSpeed, locationHistory]);
-
-// Handlers for skip buttons
-const handleSkipBack = () => setPlaybackIndex((prev) => Math.max(prev - 1, 0));
-const handleSkipForward = () =>
-setPlaybackIndex((prev) => Math.min(prev + 1, locationHistory.length - 1));
-
-const log_location_history = async (driverId: string, lat: number, lng: number) => {
-  try {
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/last_location_recorder`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          id: driverId,
-          last_lat: lat,
-          last_lng: lng,
-        }),
-      }
-    );
-
-    const data = await res.json();
-
-    if (data?.recorded) {
-      setLocationHistory(prev => [
-        {
-          location: { lat: data.recorded.lat, lng: data.recorded.lng },
-          recorded_at: data.recorded.recorded_at,
-        },
-        ...prev,
-      ]);
-    }
-  } catch (err) {
-    console.error("Error logging location history:", err);
-  }
-};
-useEffect(() => {
-  const interval = setInterval(async () => {
+  // --- Manual Log Function ---
+  const log_location_history = async (driverId: string, lat: number, lng: number) => {
     try {
-      // Call your edge function that handles all active drivers
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/last_location_recorder`,
         {
@@ -190,158 +171,106 @@ useEffect(() => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
+          body: JSON.stringify({
+            id: driverId,
+            last_lat: lat,
+            last_lng: lng,
+          }),
         }
       );
 
       const data = await res.json();
+
+      if (data?.recorded) {
+        setLocationHistory(prev => [
+          {
+            lat: data.recorded.lat, 
+            lng: data.recorded.lng, 
+            recorded_at: data.recorded.recorded_at,
+          },
+          ...prev,
+        ]);
+        toast.success("Location logged manually");
+      }
     } catch (err) {
-      console.error("Error logging driver locations:", err);
+      console.error("Error logging location history:", err);
     }
-  }, 15 * 60 * 1000); // 15 minutes
+  };
 
-  return () => clearInterval(interval); // cleanup
-}, []); // empty dependency array → runs once and keeps interval
+  // --- Auto Log Interval ---
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/last_location_recorder`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            },
+          }
+        );
+      } catch (err) {
+        console.error("Error logging driver locations:", err);
+      }
+    }, 15 * 60 * 1000); // 15 minutes
 
-// Simple hash function to turn a string into a color
-const stringToColor = (str) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const color = `hsl(${hash % 360}, 70%, 50%)`; // HSL gives nice distinct colors
-  return color;
-};
-const getDriverIcon = (driver) => {
-  const firstLetter = driver.name?.charAt(0)?.toUpperCase() ?? "?";
-  const color = stringToColor(driver.name); // generate unique color
+    return () => clearInterval(interval);
+  }, []);
 
-  return L.divIcon({
-    className: "driver-icon",
-    html: `
-      <div class="driver-icon-wrapper" style="background-color: ${color}">
-        ${firstLetter}
-      </div>
-    `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 40],
-    popupAnchor: [0, -35],
-  });
-};
-
-
-//To display location history
-const fetchLocationHistory = async (driverId: string) => {
-  try {
-    let query = supabase
-      .from('driver_location_history')
-      .select('lat, lng, recorded_at')
-      .eq('driver_id', driverId)
-      .order('recorded_at', { ascending: false });
-
-    if (filterStartDate) {
-      query = query.gte('recorded_at', filterStartDate);
+  // --- Helper: String to Color ---
+  const stringToColor = (str: string | null) => {
+    if(!str) return '#ccc';
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
-    if (filterEndDate) {
-      query = query.lte('recorded_at', filterEndDate);
-    }
+    return `hsl(${hash % 360}, 70%, 50%)`;
+  };
 
-    const { data, error } = await query;
+  const getDriverIcon = (driver: Driver) => {
+    const color = stringToColor(driver.name);
+    return L.divIcon({
+      className: "driver-icon",
+      html: `
+        <div class="driver-icon-wrapper" style="background-color: ${color}; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -35],
+    });
+  };
 
-    if (error) {
-      console.error('Error fetching location history:', error);
-      setLocationHistory([]);
-      return;
-    }
-
-    if (!data || !Array.isArray(data)) {
-      console.error("Unexpected response format:", data);
-      setLocationHistory([]);
-      return;
-    }
-
-    const formatted = data.map((row: any) => ({
-      location: { lat: row.lat, lng: row.lng },
-      recorded_at: row.recorded_at,
-    }));
-
-    setLocationHistory(formatted);
-  } catch (err) {
-    console.error("Error fetching location history:", err);
-    setLocationHistory([]);
-  }
-};
-
-useEffect(() => {
-  if (!selectedDriver) return;
-
-  fetchLocationHistory(selectedDriver.id);
-  const interval = setInterval(() => {
-    fetchLocationHistory(selectedDriver.id);
-  }, 5000);
-
-  return () => clearInterval(interval);
-}, [selectedDriver, filterStartDate, filterEndDate]);
-
+  // --- 1. Fetch Drivers ---
   useEffect(() => {
     const fetchDrivers = async () => {
       try {
-        const { data, error } = await supabase
-          .from('drivers')
-          .select(`
-            id,
-            user_id,
-            name,
-            vehicle_type,
-            plate_number,
-            license_number,
-            status,
-            last_lat,
-            last_lng,
-            last_location_update,
-            is_active,
-            created_at,
-            updated_at
-          `);
-
+        const { data, error } = await supabase.from('drivers').select('*');
         if (error) {
           console.error('Error fetching drivers:', error);
           return;
         }
-
         if (data) {
-          const formattedDrivers: Driver[] = data.map(d => {
-            const location = d.last_lat && d.last_lng 
-              ? { lat: d.last_lat, lng: d.last_lng }
-              : null;
-            
-            return {
-              id: d.id,
-              user_id: d.user_id,
-              name: d.name,
-              vehicle_type: d.vehicle_type,
-              plate_number: d.plate_number,
-              license_number: d.license_number,
-              status: d.status as Driver["status"],
-              last_lat: d.last_lat,
-              last_lng: d.last_lng,
-              last_location_update: d.last_location_update,
-              is_active: d.is_active,
-              created_at: d.created_at,
-              updated_at: d.updated_at,
-              location,
-              completedStops: 0,
-              totalStops: 0,
-              distance: 0,
-              eta: "N/A",
-              speed: 0,
-              lastUpdate: d.last_location_update ? new Date(d.last_location_update).toLocaleTimeString() : "Unknown",
-              currentRoute: "",
-            };
-          });
+          const formattedDrivers: Driver[] = data.map((d: any) => ({
+            ...d,
+            location: d.last_lat && d.last_lng ? { lat: d.last_lat, lng: d.last_lng } : null,
+            lastUpdate: d.last_location_update ? new Date(d.last_location_update).toLocaleTimeString() : "Unknown",
+            speed: 0,
+            distance: 0,
+            completedStops: 0,
+            totalStops: 0,
+            eta: "N/A",
+            currentRoute: ""
+          }));
           
           setDrivers(formattedDrivers);
           
-          // Set first driver with location as selected
+          // Select first driver if none selected
           const driverWithLocation = formattedDrivers.find(d => d.last_location_update !== null);
           if (driverWithLocation && !selectedDriver) {
             setSelectedDriver(driverWithLocation);
@@ -354,64 +283,185 @@ useEffect(() => {
 
     fetchDrivers();
 
-    // Subscribe to real-time driver updates
-    const channel = supabase
-      .channel('drivers-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'drivers',
-        },
-        (payload) => {
-          // Refetch drivers on any change
-          fetchDrivers();
-        }
-      )
+    const sub = supabase.channel('drivers-realtime-v2')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => fetchDrivers())
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(sub); };
   }, []);
+
+  // --- 2. Fetch Location History ---
+  const fetchLocationHistory = async (driverId: string) => {
+    try {
+      let query = supabase
+        .from('driver_location_history')
+        .select('lat, lng, recorded_at')
+        .eq('driver_id', driverId)
+        .order('recorded_at', { ascending: true }); // Ascending for correct playback order
+
+      if (filterStartDate) query = query.gte('recorded_at', filterStartDate);
+      if (filterEndDate) query = query.lte('recorded_at', filterEndDate);
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching location history:', error);
+        setLocationHistory([]);
+        return;
+      }
+
+      if (data) {
+        const formatted = data.map((row: any) => ({
+          lat: row.lat,
+          lng: row.lng,
+          recorded_at: row.recorded_at,
+        }));
+        setLocationHistory(formatted);
+      }
+    } catch (err) {
+      console.error("Error fetching location history:", err);
+      setLocationHistory([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedDriver) return;
+    fetchLocationHistory(selectedDriver.id);
+    
+    const interval = setInterval(() => {
+      // Only poll history if not currently playing back
+      if(!isPlaying) fetchLocationHistory(selectedDriver.id);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [selectedDriver, filterStartDate, filterEndDate, isPlaying]);
+
+  // =================================================================
+  // ✅ 3. NEW: BATCH GEOCODING (Fix missing coords)
+  // =================================================================
+  useEffect(() => {
+    const runBatchGeocode = async () => {
+      const { data } = await supabase.from("deliveries").select("*").is('latitude', null);
+      if (data && data.length > 0) {
+        for (const d of data) {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(d.address)}&limit=1`);
+            const geo = await res.json();
+            if (geo[0]) {
+              await supabase.from("deliveries").update({ 
+                latitude: parseFloat(geo[0].lat), 
+                longitude: parseFloat(geo[0].lon) 
+              }).eq("id", d.id);
+            }
+          } catch(e) { console.error("Batch geocode failed for:", d.id); }
+          
+          await new Promise((r) => setTimeout(r, 1200)); 
+        }
+      }
+    };
+    runBatchGeocode();
+  }, []);
+
+  // =================================================================
+  // ✅ 4. NEW: ROUTING LOGIC (OSRM + Active Delivery)
+  // =================================================================
+  useEffect(() => {
+    if (!selectedDriver || !selectedDriver.location) {
+      setRoutePath([]);
+      return;
+    }
+
+    const calculateRoute = async () => {
+      // 1. Find active delivery for selected driver
+      const { data: deliveries } = await supabase
+        .from('deliveries')
+        .select('*')
+        .eq('assigned_driver', selectedDriver.id)
+        .in('status', ['in_transit', 'picked_up', 'assigned'])
+        .limit(1);
+
+      if (!deliveries || deliveries.length === 0) {
+        setRoutePath([]);
+        setActiveDestination(null);
+        return;
+      }
+
+      const nextStop = deliveries[0];
+      setActiveDestination(nextStop);
+
+      // 2. Geocode if missing (Simple check)
+      let destLat = nextStop.latitude;
+      let destLng = nextStop.longitude;
+
+      if (!destLat || !destLng) {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nextStop.address)}&limit=1`);
+          const geo = await res.json();
+          if (geo[0]) {
+            destLat = parseFloat(geo[0].lat);
+            destLng = parseFloat(geo[0].lon);
+            // Save to DB
+            await supabase.from('deliveries').update({ latitude: destLat, longitude: destLng }).eq('id', nextStop.id);
+          }
+        } catch (e) {
+          console.error("Route calculation geocode failed", e);
+          return;
+        }
+      }
+
+      // 3. Fetch OSRM Route
+      if (destLat && destLng && selectedDriver.location) {
+        try {
+          const startLng = selectedDriver.location.lng;
+          const startLat = selectedDriver.location.lat;
+          
+          // OSRM URL format: {lng},{lat};{lng},{lat}
+          const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+          
+          const res = await fetch(url);
+          const data = await res.json();
+
+          if (data.routes && data.routes.length > 0) {
+            // OSRM returns [lng, lat]. Leaflet needs [lat, lng].
+            const coordinates = data.routes[0].geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
+            setRoutePath(coordinates);
+          } else {
+            // Fallback: Straight line
+            setRoutePath([[startLat, startLng], [destLat, destLng]]);
+          }
+        } catch (e) {
+          console.error("Routing API failed:", e);
+        }
+      }
+    };
+
+    calculateRoute();
+  }, [selectedDriver]); // Run whenever selectedDriver changes or updates location
+
+  // --- Filtering ---
+  const filteredDrivers = drivers.filter((driver) => {
+    const matchesSearch = (driver.name ?? '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = filterStatus === "all" || driver.status === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
 
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
-      case "online":
-        return "bg-[#27AE60] text-white";
-      case "on_delivery":
-        return "bg-blue-600 text-white";
-      case "offline":
-        return "bg-gray-600 text-white";
-      default:
-        return "bg-gray-600 text-white";
+      case "online": return "bg-[#27AE60] text-white";
+      case "on_delivery": return "bg-blue-600 text-white";
+      case "offline": return "bg-gray-600 text-white";
+      default: return "bg-gray-600 text-white";
     }
   };
 
   const getStatusLabel = (status: Driver["status"]) => {
     switch (status) {
-      case "online":
-        return "Online";
-      case "on_delivery":
-        return "On Delivery";
-      case "offline":
-        return "Offline";
-      default:
-        return status;
+      case "online": return "Online";
+      case "on_delivery": return "On Delivery";
+      case "offline": return "Offline";
+      default: return status;
     }
   };
-
-
-
-  const filteredDrivers = drivers.filter((driver) => {
-    const matchesSearch = (driver.name ?? '')
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const matchesStatus =
-      filterStatus === "all" || driver.status === filterStatus;
-    return matchesSearch && matchesStatus;
-  });
 
   return (
     <div className="space-y-6">
@@ -465,10 +515,7 @@ useEffect(() => {
                   Active Drivers
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {
-                    drivers.filter((d) => d.status !== "offline")
-                      .length
-                  }
+                  {drivers.filter((d) => d.status !== "offline").length}
                   /{drivers.length}
                 </h3>
               </div>
@@ -487,10 +534,7 @@ useEffect(() => {
                   In Transit
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {
-                    drivers.filter((d) => d.status === "on_delivery")
-                      .length
-                  }
+                  {drivers.filter((d) => d.status === "on_delivery").length}
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -508,10 +552,7 @@ useEffect(() => {
                   Total Distance
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {drivers
-                    .reduce((sum, d) => sum + d.distance, 0)
-                    .toFixed(1)}{" "}
-                  km
+                  {drivers.reduce((sum, d) => sum + d.distance, 0).toFixed(1)} km
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
@@ -619,88 +660,108 @@ useEffect(() => {
         <div className="lg:col-span-2 space-y-6">
           {/* Map Card */}
           <Card>
-  <CardContent className="p-0">
-    {/* Map with real driver locations */}
-    <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible">
-      <MapContainer
-        center={
-          selectedDriver?.location
-            ? [selectedDriver.location.lat, selectedDriver.location.lng]
-            : [14.5995, 120.9842]
-        }
-        zoom={13}
-        style={{ height: "400px", width: "100%" }}
-      >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
+            <CardContent className="p-0">
+              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible">
+                <MapContainer
+                  center={
+                    selectedDriver?.location
+                      ? [selectedDriver.location.lat, selectedDriver.location.lng]
+                      : [14.5995, 120.9842]
+                  }
+                  zoom={13}
+                  style={{ height: "400px", width: "100%" }}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
 
-        <PanToSelectedDriver selectedDriver={selectedDriver} role="driver" />
-        {/* Render all drivers with locations */}
-       {drivers.map((driver) => {
-  if (!driver.location) return null;
+                  <PanToSelectedDriver selectedDriver={selectedDriver} />
+                  
+                  {/* ✅ ADDED: Render Route Path */}
+                  {routePath.length > 0 && (
+                    <Polyline 
+                      positions={routePath} 
+                      color="#2563EB" 
+                      weight={5} 
+                      opacity={0.8} 
+                    />
+                  )}
 
-  // Detect if we are watching this driver's playback
-  const isSelected = selectedDriver?.id === driver.id;
-  const isPlayingThisDriver = isPlaying && isSelected && locationHistory.length > 0;
+                  {/* ✅ ADDED: Destination Marker */}
+                  {activeDestination && activeDestination.latitude && (
+                    <Marker position={[activeDestination.latitude, activeDestination.longitude!]} icon={L.divIcon({ className: "bg-red-600 rounded-full w-4 h-4 border-2 border-white", iconSize: [16, 16] })}>
+                      <Popup>Destination: {activeDestination.address}</Popup>
+                    </Marker>
+                  )}
 
-  // Pick marker position
-  const markerPos = isPlayingThisDriver
-    ? [
-        locationHistory[playbackIndex].location.lat,
-        locationHistory[playbackIndex].location.lng,
-      ]
-    : [driver.location.lat, driver.location.lng];
+                  {/* Drivers Markers */}
+                  {drivers.map((driver) => {
+                    if (!driver.location) return null;
 
-  return (
-    <Marker key={driver.id} position={markerPos} icon={getDriverIcon(driver)}>
-      <Popup>
-        <div className="p-2">
-          <h4 className="font-semibold">{driver.name}</h4>
-          <p className="text-sm text-gray-600">Vehicle: {driver.vehicle_type}</p>
-          <p className="text-sm text-gray-600">Status: {getStatusLabel(driver.status)}</p>
+                    // Detect if we are watching this driver's playback
+                    const isSelected = selectedDriver?.id === driver.id;
+                    const isPlayingThisDriver = isPlaying && isSelected && locationHistory.length > 0;
 
-          {driver.plate_number && (
-            <p className="text-sm text-gray-600">Plate: {driver.plate_number}</p>
-          )}
+                    // Pick marker position
+                    const markerPos = isPlayingThisDriver && locationHistory[playbackIndex]
+                      ? [
+                          locationHistory[playbackIndex].lat,
+                          locationHistory[playbackIndex].lng,
+                        ] as [number, number]
+                      : [driver.location.lat, driver.location.lng] as [number, number];
 
-          <p className="text-sm text-gray-600">
-            Speed:{" "}
-            {isPlayingThisDriver
-              ? locationHistory[playbackIndex]?.speed ?? driver.speed
-              : driver.speed}{" "}
-            km/h
-          </p>
-        </div>
-      </Popup>
-    </Marker>
-  );
-})}
+                    return (
+                      <Marker key={driver.id} position={markerPos} icon={getDriverIcon(driver)}>
+                        <Popup>
+                          <div className="p-2">
+                            <h4 className="font-semibold">{driver.name}</h4>
+                            <p className="text-sm text-gray-600">Vehicle: {driver.vehicle_type}</p>
+                            <p className="text-sm text-gray-600">Status: {getStatusLabel(driver.status)}</p>
 
-      </MapContainer>
+                            {driver.plate_number && (
+                              <p className="text-sm text-gray-600">Plate: {driver.plate_number}</p>
+                            )}
 
-      {/* Legend */}
-      <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
-        <h4 className="font-semibold mb-2">Legend</h4>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#27AE60]"></div>
-            <span>Online</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-blue-600"></div>
-            <span>On Delivery</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gray-600"></div>
-            <span>Offline</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </CardContent>
-</Card>
+                            <p className="text-sm text-gray-600">
+                              Speed:{" "}
+                              {isPlayingThisDriver
+                                ? "Playback"
+                                : driver.speed}{" "}
+                              km/h
+                            </p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
+                </MapContainer>
+
+                {/* Legend */}
+                <div className="absolute top-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
+                  <h4 className="font-semibold mb-2">Legend</h4>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-[#27AE60] flex items-center justify-center">
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                        </svg>
+                      </div>
+                      <span>Driver</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full bg-red-600 flex items-center justify-center">
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M20 7h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zM10 4h4v3h-4V4zm8 16H6v-3h2v1h2v-1h2v1h2v-1h2v3z"/>
+                        </svg>
+                      </div>
+                      <span>Destination</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Driver Performance & History */}
           {selectedDriver && (
@@ -792,117 +853,117 @@ useEffect(() => {
                 </Card>
               </TabsContent>
               <TabsContent value="history">
-  <Card>
-    <CardHeader>
-      <CardTitle className="flex items-center justify-between">
-        <span>Location History</span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (selectedDriver?.location) {
-                log_location_history(selectedDriver.id, selectedDriver.location.lat, selectedDriver.location.lng);
-              }
-            }}
-          >
-            Log Current Location
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => {/* handle skip back */}}>
-            <SkipBack className="w-4 h-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => {/* handle skip forward */}}>
-            <SkipForward className="w-4 h-4" />
-          </Button>
-        </div>
-      </CardTitle>
-    </CardHeader>
-    <CardContent className="space-y-4">
-      
-      {/* Playback Speed */}
-<div className="space-y-2">
-  <div className="flex items-center justify-between">
-    <Label>Playback Speed</Label>
-    <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
-      {playbackSpeed[0]}x
-    </span>
-  </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>Location History</span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (selectedDriver?.location) {
+                              log_location_history(selectedDriver.id, selectedDriver.location.lat, selectedDriver.location.lng);
+                            }
+                          }}
+                        >
+                          Log Current Location
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsPlaying(!isPlaying)}
+                        >
+                          {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleSkipBack}>
+                          <SkipBack className="w-4 h-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleSkipForward}>
+                          <SkipForward className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    
+                    {/* Playback Speed */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Playback Speed</Label>
+                        <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
+                          {playbackSpeed[0]}x
+                        </span>
+                      </div>
 
-  <Slider
-    value={playbackSpeed}
-    onValueChange={setPlaybackSpeed}
-    min={0.5}
-    max={4}
-    step={0.5}
-    className="w-full"
-  />
-</div>
+                      <Slider
+                        value={playbackSpeed}
+                        onValueChange={setPlaybackSpeed}
+                        min={0.5}
+                        max={4}
+                        step={0.5}
+                        className="w-full"
+                      />
+                    </div>
 
-{/* Playback Scrubber */}
-<Slider
-  value={[playbackIndex]}
-  min={0}
-  max={locationHistory.length - 1}
-  step={1}
-  onValueChange={(val) => {
-    setPlaybackIndex(val[0]);
-  }}
-  className="w-full"
-/>
+                    {/* Playback Scrubber */}
+                    <Slider
+                      value={[playbackIndex]}
+                      min={0}
+                      max={Math.max(0, locationHistory.length - 1)}
+                      step={1}
+                      onValueChange={(val) => {
+                        setPlaybackIndex(val[0]);
+                      }}
+                      className="w-full"
+                    />
 
-{/* Timeline */}
-<div className="space-y-3 max-h-[400px] overflow-y-auto">
-  {locationHistory.map((entry, index) => (
-    <div
-      key={index}
-      className="flex gap-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0"
-    >
-      <div className="flex-shrink-0 w-28 text-sm text-[#222B2D]/60 dark:text-white/60">
-        {new Date(entry.recorded_at).toLocaleString()}
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2 mb-1">
-          <MapPin className="w-4 h-4 text-[#27AE60]" />
-          <span className="text-sm text-[#222B2D] dark:text-white">
-            Lat: {entry.location.lat.toFixed(4)}, Lng:{" "}
-            {entry.location.lng.toFixed(4)}
-          </span>
-        </div>
-      </div>
-    </div>
-  ))}
-</div>
+                    {/* Timeline */}
+                    <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                      {locationHistory.map((entry, index) => (
+                        <div
+                          key={index}
+                          className="flex gap-3 pb-3 border-b border-gray-200 dark:border-gray-700 last:border-0"
+                        >
+                          <div className="flex-shrink-0 w-28 text-sm text-[#222B2D]/60 dark:text-white/60">
+                            {new Date(entry.recorded_at).toLocaleString()}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <MapPin className="w-4 h-4 text-[#27AE60]" />
+                              <span className="text-sm text-[#222B2D] dark:text-white">
+                                Lat: {entry.lat.toFixed(4)}, Lng:{" "}
+                                {entry.lng.toFixed(4)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
 
 
-      {/* Date Filter */}
-      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-        <Label className="mb-2 block">Filter by Date Range</Label>
-        <div className="flex gap-2">
-          <Input
-            type="date"
-            className="flex-1"
-            onChange={(e) => setFilterStartDate(e.target.value)}
-          />
-          <span className="flex items-center text-[#222B2D]/60 dark:text-white/60">
-            to
-          </span>
-          <Input
-            type="date"
-            className="flex-1"
-            onChange={(e) => setFilterEndDate(e.target.value)}
-          />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-</TabsContent>
+                    {/* Date Filter */}
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <Label className="mb-2 block">Filter by Date Range</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="date"
+                          className="flex-1"
+                          onChange={(e) => setFilterStartDate(e.target.value)}
+                        />
+                        <span className="flex items-center text-[#222B2D]/60 dark:text-white/60">
+                          to
+                        </span>
+                        <Input
+                          type="date"
+                          className="flex-1"
+                          onChange={(e) => setFilterEndDate(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
             </Tabs>
           )}

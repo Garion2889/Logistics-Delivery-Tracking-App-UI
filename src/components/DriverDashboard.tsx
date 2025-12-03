@@ -3,7 +3,7 @@ import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { DriverDeliveryDetail } from "./DriverDeliveryDetail";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -22,6 +22,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
 import { PanToSelectedDriver } from "./PanToSelectedDriver";
+
+// Fix default Leaflet icon
+const defaultIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
 
 /** ✅ Shared status union to avoid mismatch */
 type DeliveryStatus =
@@ -42,6 +51,8 @@ interface DriverDelivery {
   status: DeliveryStatus;
   paymentType: "COD" | "Paid";
   amount?: number;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface DriverDashboardProps {
@@ -50,6 +61,17 @@ interface DriverDashboardProps {
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
+}
+
+// Helper to pan map to driver's location
+function PanToDriver({ location }: { location: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (location) {
+      map.flyTo(location, 15, { animate: true, duration: 1.5 });
+    }
+  }, [location, map]);
+  return null;
 }
 
 export function DriverDashboard({
@@ -70,6 +92,10 @@ export function DriverDashboard({
   const [driverName, setDriverName] = useState<string>("");
 
   const mapRef = useRef<L.Map | null>(null);
+
+  // ✅ NEW: State for OSRM Route Shape & Active Destination
+  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+  const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
 
   // Map DB status -> dashboard status
   const mapStatus = (dbStatus: string): DeliveryStatus => {
@@ -119,6 +145,7 @@ export function DriverDashboard({
         console.error("Failed fetching driver row:", driverError);
         return;
       }
+
       setDriverId(driver.id);
 
       const { data: user, error: userError } = await supabase
@@ -153,6 +180,8 @@ export function DriverDashboard({
         driver_id: d.driver_id,
         paymentType: d.payment_type,
         amount: d.total_amount,
+        latitude: d.latitude,
+        longitude: d.longitude,
       }));
 
       setDeliveries(transformed);
@@ -238,10 +267,10 @@ export function DriverDashboard({
     };
   }, [driverId]);
 
-  // Start GPS uploader
+  // 4. Start GPS uploader
   useGPSUploader();
 
-  // Subscribe to driver location updates
+  // 5. Subscribe to driver location updates
   useEffect(() => {
     if (!driverId) return;
 
@@ -314,6 +343,7 @@ export function DriverDashboard({
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
+
         {/* HEADER */}
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between px-4 py-3">
@@ -356,6 +386,7 @@ export function DriverDashboard({
           </div>
         </header>
 
+        {/* MAIN CONTENT */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
@@ -369,14 +400,14 @@ export function DriverDashboard({
             />
           ) : (
             <>
-              {/* MAP */}
+              {/* MAP CARD */}
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-4">
                   <MapContainer
                     center={driverLocation || [14.5995, 120.9842]}
                     zoom={13}
                     style={{ height: "400px", width: "100%" }}
-                    whenReady={(map) => (mapRef.current = map)}
+                    ref={mapRef}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -453,9 +484,9 @@ export function DriverDashboard({
                       </div>
 
                       {delivery.paymentType === "COD" && delivery.amount && (
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
-                          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                            COD: ₱{delivery.amount.toLocaleString()}
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 border border-yellow-100 dark:border-yellow-800">
+                          <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">
+                            💰 Collect COD: ₱{delivery.amount.toLocaleString()}
                           </p>
                         </div>
                       )}
