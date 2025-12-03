@@ -122,9 +122,9 @@ export function EditDriverModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-2 ">
             <Label htmlFor="name">Full Name</Label>
-            <Input
+            <Input className="bg-gray-200"
               id="name"
               value={formData.name}
               readOnly
@@ -134,7 +134,7 @@ export function EditDriverModal({
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input
+            <Input className="bg-gray-200"
               id="email"
               type="email"
               value={formData.email}
@@ -144,7 +144,7 @@ export function EditDriverModal({
 
           <div className="space-y-2">
             <Label htmlFor="phone">Phone Number</Label>
-            <Input
+            <Input className="bg-gray-200"
               id="phone"
               type="tel"
               value={formData.phone}
@@ -174,7 +174,7 @@ export function EditDriverModal({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} className="hover:bg-gray-200">
               Cancel
             </Button>
             <Button
