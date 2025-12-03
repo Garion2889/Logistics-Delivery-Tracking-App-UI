@@ -991,187 +991,171 @@ const formatStatus = (status: string) => {
           </div>
         </TabsContent>
 
-        {/* Performance */}
-        <TabsContent value="performance">
-          <Card>
-            <CardHeader>
-              <CardTitle>Driver Performance Metrics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Driver</TableHead>
-                    <TableHead>Deliveries/Day</TableHead>
-                    <TableHead>Success Rate</TableHead>
-                    <TableHead>Distance Traveled</TableHead>
-                    <TableHead>Avg Rating</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loadingPerf ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center">
-                        Loading performance...
-                      </TableCell>
-                    </TableRow>
-                  ) : performanceRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center">
-                        No performance data yet.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    performanceRows.map((row) => (
-                      <TableRow key={row.driver_id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center">
-                              <span className="text-white text-sm">
-                                {(row.name ?? "D").charAt(0)}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-[#222B2D] dark:text-white">
-                                {row.name ?? row.driver_id}
-                              </p>
-                              <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                                {row.vehicle_type ?? ""}
-                              </p>
-                            </div>
-                          </div>
-                        </TableCell>
 
-                        <TableCell>
-                          {Number(row.deliveries_per_day).toFixed(1)}
-                        </TableCell>
-                        <TableCell>
-                          {Number(row.success_rate).toFixed(0)}%
-                        </TableCell>
-                        <TableCell>
-                          {Number(row.distance_traveled_km).toFixed(1)} km
-                        </TableCell>
-                        <TableCell>
-                          {row.avg_rating != null
-                            ? Number(row.avg_rating).toFixed(1)
-                            : "—"}{" "}
-                          ★
-                        </TableCell>
+       {/* Performance */}
+<TabsContent value="performance">
+  <Card>
+    <CardHeader>
+      <CardTitle>Driver Performance Metrics</CardTitle>
+    </CardHeader>
 
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            View Report
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
+    <CardContent>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Driver</TableHead>
+            <TableHead>Deliveries/Day</TableHead>
+            <TableHead>Success Rate</TableHead>
+            <TableHead>Distance Traveled</TableHead>
+          </TableRow>
+        </TableHeader>
 
-         {/* Schedule */}
-        <TabsContent value="schedule">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle>Schedule Calendar</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4">
-                <Calendar
-                  onChange={(value) => setDate(value as Date)}
-                  value={date}
-                  className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
-              </CardContent>
-            </Card>
+        <TableBody>
+          {loadingPerf ? (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center">
+                Loading performance...
+              </TableCell>
+            </TableRow>
+          ) : performanceRows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={4} className="text-center">
+                No performance data yet.
+              </TableCell>
+            </TableRow>
+          ) : (
+            performanceRows.map((row) => (
+              <TableRow key={row.driver_id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[#27AE60] flex items-center justify-center">
+                      <span className="text-white text-sm">
+                        {(row.name ?? "D").charAt(0)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-[#222B2D] dark:text-white">
+                        {row.name ?? row.driver_id}
+                      </p>
+                      <p className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                        {row.vehicle_type ?? ""}
+                      </p>
+                    </div>
+                  </div>
+                </TableCell>
 
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Scheduled Deliveries</span>
-                </CardTitle>
-              </CardHeader>
+                <TableCell>
+                  {Number(row.deliveries_per_day).toFixed(1)}
+                </TableCell>
 
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-center">Date</TableHead>
-                      <TableHead className="text-center">Driver</TableHead>
-                      <TableHead className="text-center">Deliveries</TableHead>
-                      <TableHead className="text-center">Status</TableHead>
-                      <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                <TableCell>
+                  {Number(row.success_rate).toFixed(0)}%
+                </TableCell>
 
-                  <TableBody>
-                    {loadingSchedule ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center">
-                          Loading schedules...
-                        </TableCell>
-                      </TableRow>
-                    ) : scheduleRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center">
-                          No schedules yet.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      scheduleRows.map((s) => (
-                        <TableRow key={s.id}>
-                          <TableCell className="text-center text-middle">
-                            {new Date(s.schedule_date).toLocaleDateString()}
-                          </TableCell>
+                <TableCell>
+                  {Number(row.distance_traveled_km).toFixed(1)} km
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </CardContent>
+  </Card>
+</TabsContent>
 
-                          <TableCell className="text-center text-middle">
-                            <div className="flex flex-col">
-                              <span className="text-[#222B2D] dark:text-white">
-                                {s.driver_name ?? s.driver_id}
-                              </span>
-                              <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                                {s.vehicle_type ?? ""}
-                              </span>
-                            </div>
-                          </TableCell>
 
-                          <TableCell className="text-center text-middle">
-                            {s.deliveries_count}
-                          </TableCell>
 
-                          <TableCell className="text-center text-middle"> 
-                            <Badge
-                              className={(
-                                s.status === "completed"
-                                  ? "bg-green-100 text-green-700"
-                                  : s.status === "in_progress" ||
-                                    s.status === "in-progress"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-gray-200 text-gray-700")
-                              }
-                            >
-                              {formatStatus(s.status)}
-                            </Badge>
-                          </TableCell>
+       {/* Schedule */}
+<TabsContent value="schedule">
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <Card className="lg:col-span-1">
+      <CardHeader>
+        <CardTitle>Schedule Calendar</CardTitle>
+      </CardHeader>
+      <CardContent className="p-4">
+        <Calendar
+          onChange={(value) => setDate(value as Date)}
+          value={date}
+          className="rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+        />
+      </CardContent>
+    </Card>
 
-                          <TableCell className="text-center text-middle">
-                            <Button variant="ghost" size="sm">
-                              View
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Scheduled Deliveries</span>
+        </CardTitle>
+      </CardHeader>
+
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-center w-[20%]">Date</TableHead>
+              <TableHead className="text-center w-[40%]">Driver</TableHead>
+              <TableHead className="text-center w-[20%]">Deliveries</TableHead>
+              <TableHead className="text-center w-[20%]">Status</TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {loadingSchedule ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center">
+                  Loading schedules...
+                </TableCell>
+              </TableRow>
+            ) : scheduleRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center">
+                  No schedules yet.
+                </TableCell>
+              </TableRow>
+            ) : (
+              scheduleRows.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell className="text-center align-middle">
+                    {new Date(s.schedule_date).toLocaleDateString()}
+                  </TableCell>
+
+                  <TableCell className="text-center align-middle">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[#222B2D] dark:text-white">
+                        {s.driver_name ?? s.driver_id}
+                      </span>
+                      <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                        {s.vehicle_type ?? ""}
+                      </span>
+                    </div>
+                  </TableCell>
+
+                  <TableCell className="text-center align-middle">
+                    {s.deliveries_count}
+                  </TableCell>
+
+                  <TableCell className="text-center align-middle">
+                    <Badge
+                      className={
+                        s.status === "completed"
+                          ? "bg-green-700 text-white"
+                          : "bg-blue-600 text-white"
+                      }
+                    >
+                      {formatStatus(s.status)}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  </div>
+</TabsContent>
+
       </Tabs>
 
       {/* Optimize Routes Modal */}
