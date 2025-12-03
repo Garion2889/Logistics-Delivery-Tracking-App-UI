@@ -1,14 +1,13 @@
 import { useState, useEffect, useMemo } from "react"
 import { autoAssignRoutes } from "../lib/supabase";
 import { toast } from "sonner";
-;
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -63,12 +62,14 @@ interface Driver {
 interface OptimizedRoute {
   id: string;
   name: string;
-  driver?: string;
+  driverId?: string; // Changed from 'driver' to 'driverId' to store the driver's ID
+  driverName?: string; // New field to store driver's name for display
   stops: number;
   distance: number;
   estimatedTime: string;
   status: "planned" | "assigned" | "active" | "completed";
   priority: "high" | "medium" | "low";
+  polyline?: [number, number][]; // Added polyline field
 }
 
 interface ScheduledDelivery {
@@ -91,10 +92,14 @@ type PerfRow = {
 
 interface Delivery {
   id: string;
+  ref_no: string; 
   customer_name: string;
   address: string;
   latitude: number | null;
   longitude: number | null;
+  status: string;
+  assigned_driver: string | null;
+  priority?: string;
 }
 
 /** ✅ schedule row type */
@@ -108,6 +113,27 @@ type ScheduleRow = {
   vehicle_type: string | null;
 };
 
+// Helper: Fixes map rendering in tabs and auto-zooms
+function MapController({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    // 1. Force map to recalculate size (fixes grey box in tabs)
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+
+    // 2. Zoom to fit markers
+    if (bounds) {
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+    
+    return () => clearTimeout(timer);
+  }, [bounds, map]);
+
+  return null;
+}
+
 // ------------------ Component ------------------
 
 export function RouteOptimizationPage() {
@@ -115,6 +141,9 @@ export function RouteOptimizationPage() {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
+  
+  // ✅ NEW: State for OSRM Route Shape
+  const [routePath, setRoutePath] = useState<[number, number][]>([]);
 
   // ✅ NEW: track active tab so we fetch schedules only when schedule is opened
   const [activeTab, setActiveTab] = useState("availability");
@@ -131,121 +160,231 @@ export function RouteOptimizationPage() {
   const [scheduledDeliveries, setScheduledDeliveries] = useState<ScheduledDelivery[]>([]);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  
+  // ------------------ 1. Fetch Deliveries ------------------
   const refreshDeliveries = async () => {
-  try {
-    const { data, error } = await supabase
-      .from("deliveries")
-      .select(`
-        id,
-        ref_no,
-        customer_name,
-        address,
-        latitude,
-        longitude,
-        status,
-        assigned_driver
-      `)
-      .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("deliveries")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    setDeliveries(data || []);
-  } catch (err) {
-    console.error("Failed to refresh deliveries:", err);
-  }
-};
+      setDeliveries(data as Delivery[] || []);
+    } catch (err) {
+      console.error("Failed to refresh deliveries:", err);
+    }
+  };
 
-// ------------------ Auto Assign Handler ------------------
-const handleAutoAssign = async () => {
-  try {
-    console.log("Calling auto-assign...");
-    const { ok, data } = await autoAssignRoutes();
+  // ------------------ 2. Geocoding Logic ------------------
+  const geocodeDelivery = async (delivery: Delivery) => {
+    // If we already have coords, skip
+    if (delivery.latitude && delivery.longitude) return;
 
-    if (!ok) {
-      toast.error(data.error || "Auto-assign failed");
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(delivery.address)}&limit=1`
+      );
+      const geo = await res.json();
+      
+      if (geo.length > 0) {
+        const lat = parseFloat(geo[0].lat);
+        const lng = parseFloat(geo[0].lon);
+
+        // Update Supabase
+        const { error: updateError } = await supabase
+          .from("deliveries")
+          .update({ latitude: lat, longitude: lng })
+          .eq("id", delivery.id);
+
+        if (!updateError) {
+            // Update Local State immediately
+            setDeliveries((prev) =>
+                prev.map((d) =>
+                d.id === delivery.id ? { ...d, latitude: lat, longitude: lng } : d
+                )
+            );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to geocode delivery:", delivery.address, err);
+    }
+  };
+
+  // ------------------ 3. Effect to Geocode ALL missing addresses on load ------------------
+  useEffect(() => {
+    const fetchAndGeocodeDeliveries = async () => {
+      // Fetch ANY delivery where latitude is missing
+      const { data } = await supabase
+        .from("deliveries")
+        .select("*")
+        .is('latitude', null);
+
+      if (data && data.length > 0) {
+        // Process one by one with delay to respect rate limits
+        for (const d of data) {
+          await geocodeDelivery(d as Delivery);
+          await new Promise((r) => setTimeout(r, 1200)); 
+        }
+        refreshDeliveries();
+      }
+    };
+    fetchAndGeocodeDeliveries();
+  }, []);
+
+  // ------------------ 4. Fetch Active Routes (Populates list in "Optimized Routes" tab) ------------------
+  const fetchAssignedRoutes = async () => {
+    try {
+      // Query deliveries that have an assigned driver and are active
+      const { data: assignedData, error } = await supabase
+        .from("deliveries")
+        .select("*")
+        .in('status', ['assigned', 'picked_up', 'in_transit']) 
+        .not('assigned_driver', 'is', null) 
+        .order("assigned_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (!assignedData || assignedData.length === 0) {
+        setOptimizedRoutes([]);
+        return;
+      }
+
+      // Format for UI
+      const formattedRoutes: OptimizedRoute[] = assignedData.map((d) => {
+        const assignedDriver = drivers.find((dr) => dr.id === d.assigned_driver);
+        return {
+          id: d.id,
+          name: d.ref_no || `Delivery ${d.id.slice(0, 4)}`,
+          driverId: d.assigned_driver!,
+          driverName: assignedDriver?.name || "Loading...",
+          stops: 1,
+          distance: 0, // Placeholder
+          estimatedTime: "Calculating...",
+          status: d.status as "assigned" | "active" | "planned" | "completed",
+          priority: (d.priority as "high" | "medium" | "low") || "normal",
+          polyline: [],
+        };
+      });
+
+      setOptimizedRoutes(formattedRoutes);
+    } catch (err) {
+      console.error("Error fetching assigned routes:", err);
+    }
+  };
+
+  // ------------------ 5. OSRM Route Shape Fetcher (Draws curved lines) ------------------
+  useEffect(() => {
+    if (!selectedRoute) {
+      setRoutePath([]);
       return;
     }
 
-    toast.success("Auto Assignment Completed");
-    console.log("Assignments:", data.assignments);
+    const fetchRouteShape = async () => {
+      const activeDelivery = deliveries.find((d) => d.id === selectedRoute.id);
+      const activeDriver = drivers.find((d) => d.id === selectedRoute.driverId || d.name === selectedRoute.driverName);
 
-    await refreshDeliveries();
-  } catch (err: any) {
-    console.error("Auto assign error:", err);
-    toast.error("Auto assign failed");
-  }
-};
+      if (!activeDelivery?.latitude || !activeDelivery?.longitude || !activeDriver?.location) {
+        setRoutePath([]);
+        return;
+      }
 
+      // OSRM Public API
+      const url = `https://router.project-osrm.org/route/v1/driving/${activeDriver.location.lng},${activeDriver.location.lat};${activeDelivery.longitude},${activeDelivery.latitude}?overview=full&geometries=geojson`;
 
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.routes && data.routes.length > 0) {
+          // Swap [lng, lat] to [lat, lng] for Leaflet
+          const coordinates = data.routes[0].geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
+          setRoutePath(coordinates);
+        }
+      } catch (err) {
+        console.error("Failed to fetch route shape:", err);
+        // Fallback to straight line
+        setRoutePath([[activeDriver.location.lat, activeDriver.location.lng], [activeDelivery.latitude, activeDelivery.longitude]]);
+      }
+    };
+
+    fetchRouteShape();
+  }, [selectedRoute, deliveries, drivers]);
+
+  // ------------------ Auto Assign Handler ------------------
+  const handleAutoAssign = async () => {
+    try {
+      toast.loading("Assigning routes...");
+      console.log("Calling auto-assign...");
+      
+      const { ok, data } = await autoAssignRoutes();
+
+      if (!ok) {
+        toast.dismiss();
+        toast.error(data.error || "Auto-assign failed");
+        return;
+      }
+
+      toast.dismiss();
+      toast.success(`Assignments Completed`);
+      console.log("Assignments:", data.assignments);
+
+      // ✅ REFRESH DATA IMMEDIATELY
+      await refreshDeliveries(); // Updates coordinates for map
+      await fetchAssignedRoutes(); // Updates list on left side
+      setActiveTab("routes"); // Switch tab so user sees the result
+
+    } catch (err: any) {
+      toast.dismiss();
+      console.error("Auto assign error:", err);
+      toast.error("Auto assign failed");
+    }
+  };
+
+  // Initial Load
   useEffect(() => {
-  handleAutoAssign();
-}, []);
+    refreshDeliveries();
+  }, []);
 
   // ✅ ADDED: schedule state (REQUIRED)
   const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([]);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
-
-   // ------------------ Fetch and geocode deliveries ------------------
-  const geocodeDelivery = async (delivery: Delivery) => {
-  if (delivery.latitude && delivery.longitude) return; // already has geolocation
-
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(delivery.address)}&limit=1`
-    );
-    const geo = await res.json();
-    if (geo.length > 0) {
-      const lat = parseFloat(geo[0].lat);
-      const lng = parseFloat(geo[0].lon);
-
-      // update in Supabase
-      const { data: updated, error: updateError } = await supabase
-        .from("deliveries")
-        .update({ latitude: lat, longitude: lng })
-        .eq("id", delivery.id);
-
-      if (updateError) console.error("Supabase update failed:", updateError);
-
-      // update local state
-      setDeliveries((prev) =>
-        prev.map((d) =>
-          d.id === delivery.id ? { ...d, latitude: lat, longitude: lng } : d
-        )
-      );
-    } else {
-      console.warn("No geocode result for", delivery.address);
+  // ------------------ Tab Switching Logic ------------------
+  useEffect(() => {
+    if (activeTab === "routes") {
+        fetchAssignedRoutes();
     }
-  } catch (err) {
-    console.error("Failed to geocode delivery:", delivery.address, err);
-  }
-};
-  
-useEffect(() => {
-  const fetchAndGeocodeDeliveries = async () => {
-    const { data, error } = await supabase
-      .from("deliveries")
-      .select("*")
-      .eq("status", "created"); // or your desired filter
+    else if (activeTab === "schedule") {
+      console.log("✅ Schedule tab opened — fetching schedules...");
+      const loadSchedules = async () => {
+        setLoadingSchedule(true);
+        const { data, error } = await supabase
+          .from("driver_schedules_view") // IMPORTANT: view has RLS off
+          .select("*")
+          .order("schedule_date", { ascending: false });
 
-    if (error) {
-      console.error("Error fetching deliveries:", error);
-      return;
+        console.log("📦 SCHEDULE VIEW data:", data);
+        console.log("❌ SCHEDULE VIEW error:", error);
+        
+        if (!error && data) {
+           setScheduleRows(data.map((s: any) => ({
+             id: s.id,
+             driver_id: s.driver_id,
+             schedule_date: s.schedule_date,
+             deliveries_count: s.deliveries_count ?? 0,
+             status: s.status,
+             driver_name: s.driver_name ?? s.name ?? null,
+             vehicle_type: s.vehicle_type ?? null,
+           })));
+        } else {
+           setScheduleRows([]);
+        }
+        setLoadingSchedule(false);
+      };
+      loadSchedules();
     }
-
-    setDeliveries(data || []);
-
-    // geocode each delivery
-    for (const d of data || []) {
-      await geocodeDelivery(d as Delivery);
-      // Optional: add a small delay to respect rate limits
-      await new Promise((r) => setTimeout(r, 1200));
-    }
-  };
-
-  fetchAndGeocodeDeliveries();
-}, []);
-
+  }, [activeTab]); 
 
   // ------------------ Fetch drivers ------------------
   useEffect(() => {
@@ -317,75 +456,32 @@ useEffect(() => {
   }, []);
 
   // ------------------ Fetch performance rows ------------------
-useEffect(() => {
-  const loadPerformance = async () => {
-    setLoadingPerf(true);
-
-    const { data, error } = await supabase.functions.invoke(
-      "get-driver-performance",
-      {
-        method: "POST",
-        body: {}, // ✅ no from/to = get all rows
-      }
-    );
-
-    console.log("performance raw data:", data);
-    console.log("performance error:", error);
-
-    if (error) {
-      setPerformanceRows([]);
-    } else {
-      setPerformanceRows((data as PerfRow[]) || []);
-    }
-
-    setLoadingPerf(false);
-  };
-
-  loadPerformance();
-}, []);
-
-
-
- /** ✅ FIXED: Fetch schedules only when Schedule tab opens */
   useEffect(() => {
-    if (activeTab !== "schedule") return;
+    const loadPerformance = async () => {
+      setLoadingPerf(true);
 
-    console.log("✅ Schedule tab opened — fetching schedules...");
-    const loadSchedules = async () => {
-      setLoadingSchedule(true);
-
-      const { data, error } = await supabase
-        .from("driver_schedules_view") // IMPORTANT: view has RLS off
-        .select("*")
-        .order("schedule_date", { ascending: false });
-
-      console.log("📦 SCHEDULE VIEW data:", data);
-      console.log("❌ SCHEDULE VIEW error:", error);
-      console.log("📊 SCHEDULE VIEW count:", data?.length ?? 0);
-
-      if (error || !data) {
-        setScheduleRows([]);
-        setLoadingSchedule(false);
-        return;
-      }
-
-      setScheduleRows(
-        data.map((s: any) => ({
-          id: s.id,
-          driver_id: s.driver_id,
-          schedule_date: s.schedule_date,
-          deliveries_count: s.deliveries_count ?? 0,
-          status: s.status,
-          driver_name: s.driver_name ?? s.name ?? null,
-          vehicle_type: s.vehicle_type ?? null,
-        }))
+      const { data, error } = await supabase.functions.invoke(
+        "get-driver-performance",
+        {
+          method: "POST",
+          body: {}, // ✅ no from/to = get all rows
+        }
       );
 
-      setLoadingSchedule(false);
+      console.log("performance raw data:", data);
+      console.log("performance error:", error);
+
+      if (error) {
+        setPerformanceRows([]);
+      } else {
+        setPerformanceRows((data as PerfRow[]) || []);
+      }
+
+      setLoadingPerf(false);
     };
 
-    loadSchedules();
-  }, [activeTab]);
+    loadPerformance();
+  }, []);
 
   // ------------------ Derived KPI values ------------------
   const activeDriversCount = useMemo(
@@ -408,19 +504,25 @@ useEffect(() => {
   }, [performanceRows]);
 
   // ------------------ Helpers ------------------
-
+const formatStatus = (status: string) => {
+  if (!status) return "Unknown";
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
   const getStatusColor = (status: Driver["status"]) => {
     switch (status) {
       case "online":
-        return "bg-[#27AE60] text-white";
+        return "bg-green-100 text-green-700";
       case "in-transit":
-        return "bg-blue-600 text-white";
+        return "bg-purple-100 text-purple-700";
       case "idle":
-        return "bg-yellow-600 text-white";
+        return "bg-yellow-100 text-yellow-700";
       case "offline":
-        return "bg-gray-600 text-white";
+        return "bg-gray-200 text-gray-700";
       default:
-        return "bg-gray-600 text-white";
+        return "bg-gray-200 text-gray-700";
     }
   };
 
@@ -429,13 +531,13 @@ useEffect(() => {
       case "active":
         return "bg-blue-600 text-white";
       case "assigned":
-        return "bg-[#27AE60] text-white";
+        return "bg-blue-100 text-blue-700";
       case "planned":
         return "bg-gray-600 text-white";
       case "completed":
-        return "bg-green-700 text-white";
+        return "bg-green-100 text-green-700";
       default:
-        return "bg-gray-600 text-white";
+        return "bg-purple-100 text-purple-700";
     }
   };
 
@@ -467,7 +569,7 @@ useEffect(() => {
         </p>
       </div>
 
-      {/*  Both buttons wrapped properly */}
+      {/* Both buttons wrapped properly */}
       <div className="flex gap-3">
         <Button onClick={() => setShowOptimizeModal(true)} className="gap-2">
           <Zap className="w-4 h-4" />
@@ -612,9 +714,7 @@ useEffect(() => {
                     <TableHead>Driver</TableHead>
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Current Route</TableHead>
                     <TableHead>Last Update</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -637,23 +737,13 @@ useEffect(() => {
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(driver.status)}>
-                          {driver.status}
+                          {formatStatus(driver.status)}
                         </Badge>
-                      </TableCell>
-                      <TableCell className="text-[#222B2D]/60 dark:text-white/60">
-                        {driver.currentRoute || "No route assigned"}
                       </TableCell>
                       <TableCell className="text-[#222B2D]/60 dark:text-white/60">
                         {driver.lastUpdate}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSelectedDriver(driver)}
-                        >
-                          View Details
-                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -670,17 +760,14 @@ useEffect(() => {
           </Card>
         </TabsContent>
 
-        {/* Routes */}
+        {/* Routes Tab */}
         <TabsContent value="routes">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div className="lg:col-span-2 space-y-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>Optimized Routes</span>
-                    <Badge variant="outline">
-                    
-                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -704,45 +791,57 @@ useEffect(() => {
                               {route.name}
                             </h4>
                             <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                              {route.driver || "Unassigned"}
+                              {route.driverName || "Unassigned"}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge className={getRouteStatusColor(route.status)}>
-                            {route.status}
+                            {formatStatus(route.status)}
                           </Badge>
-                          <AlertCircle className={`w-4 h-4 ${getPriorityColor(route.priority)}`} />
+                          <AlertCircle
+                            className={`w-4 h-4 ${getPriorityColor(route.priority)}`}
+                          />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">Stops</p>
-                          <p className="text-[#222B2D] dark:text-white">{route.stops}</p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">
+                            Stops
+                          </p>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {route.stops}
+                          </p>
                         </div>
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">Distance</p>
-                          <p className="text-[#222B2D] dark:text-white">{route.distance} km</p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">
+                            Distance
+                          </p>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {route.distance.toFixed(2)} km
+                          </p>
                         </div>
                         <div>
-                          <p className="text-[#222B2D]/60 dark:text-white/60">Est. Time</p>
-                          <p className="text-[#222B2D] dark:text-white">{route.estimatedTime}</p>
+                          <p className="text-[#222B2D]/60 dark:text-white/60">
+                            Est. Time
+                          </p>
+                          <p className="text-[#222B2D] dark:text-white">
+                            {route.estimatedTime}
+                          </p>
                         </div>
                       </div>
-
-                      {route.status === "planned" && (
-                        <Button size="sm" className="w-full mt-3">
-                          Assign Driver
-                        </Button>
-                      )}
                     </div>
                   ))}
+                  {optimizedRoutes.length === 0 && (
+                     <div className="text-center p-4 text-gray-500">No optimized routes found. Try Auto Assign.</div>
+                  )}
                 </CardContent>
               </Card>
             </div>
 
-            <div className="lg:col-span-1">
+            {/* Map Column */}
+            <div className="lg:col-span-2">
               <Card className="sticky top-6">
                 <CardHeader>
                   <CardTitle>
@@ -752,64 +851,137 @@ useEffect(() => {
                 <CardContent>
                   {selectedRoute ? (
                     <div className="space-y-4">
-                      <div className="h-64 rounded-lg overflow-hidden">
-                        <MapContainer
-                          center={[14.5547, 121.0244]}
-                          zoom={12}
-                          className="h-full w-full"
-                          scrollWheelZoom={false}
-                        >
-                          <TileLayer
-                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            attribution="&copy; OpenStreetMap contributors"
-                          />
+                      {/* MAP CONTAINER */}
+                      <div className="h-64 rounded-lg overflow-hidden relative z-0 border border-gray-200">
+                        {(() => {
+                          // --- DATA LOOKUP LOGIC ---
+                          const activeDelivery = deliveries.find((d) => d.id === selectedRoute.id);
+                          const activeDriver = drivers.find((d) => d.id === selectedRoute.driverId || d.name === selectedRoute.driverName);
 
-                          {drivers
-                            .filter(
-                              (d) =>
-                                d.currentRoute === selectedRoute.name && d.location
-                            )
-                            .map((d) => (
-                              <Marker
-                                key={d.id}
-                                position={[d.location!.lat, d.location!.lng]}
-                                icon={L.divIcon({
-                                  className:
-                                    "bg-[#27AE60] rounded-full w-6 h-6 flex items-center justify-center text-white",
-                                  html: `<span class="text-xs">${d.name.charAt(0)}</span>`,
-                                })}
-                              >
-                                <Popup>
-                                  <div className="text-sm">
-                                    <p className="font-semibold">{d.name}</p>
-                                    <p>{d.vehicle}</p>
-                                    <p>Status: {d.status}</p>
-                                  </div>
-                                </Popup>
-                              </Marker>
-                            ))}
-                        </MapContainer>
+                          const driverLoc = activeDriver?.location;
+                          const deliveryLoc = activeDelivery?.latitude && activeDelivery?.longitude 
+                            ? { lat: activeDelivery.latitude, lng: activeDelivery.longitude } 
+                            : null;
+
+                          if (!driverLoc && !deliveryLoc) {
+                            return (
+                              <div className="h-full flex flex-col items-center justify-center bg-gray-100 text-gray-500 text-sm p-4 text-center">
+                                <AlertCircle className="w-8 h-8 mb-2 text-yellow-500" />
+                                <p>Missing location data.</p>
+                                <p className="text-xs mt-1">Check if Driver is Online or Delivery has been Geocoded.</p>
+                              </div>
+                            );
+                          }
+
+                          let bounds: L.LatLngBoundsExpression | null = null;
+                          let center: [number, number] = [14.5995, 120.9842]; // Default Manila
+
+                          if (driverLoc && deliveryLoc) {
+                            bounds = [
+                              [driverLoc.lat, driverLoc.lng],
+                              [deliveryLoc.lat, deliveryLoc.lng]
+                            ];
+                          } else if (driverLoc) {
+                            center = [driverLoc.lat, driverLoc.lng];
+                          } else if (deliveryLoc) {
+                            center = [deliveryLoc.lat, deliveryLoc.lng];
+                          }
+
+                          return (
+                            <MapContainer
+                              key={selectedRoute.id} 
+                              center={center}
+                              zoom={13}
+                              className="h-full w-full"
+                              scrollWheelZoom={false}
+                            >
+                              <TileLayer
+                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                attribution='&copy; OpenStreetMap'
+                              />
+
+                              <MapController bounds={bounds} />
+
+
+                              {deliveryLoc && (
+                                <Marker
+                                  position={[deliveryLoc.lat, deliveryLoc.lng]}
+                                  icon={L.divIcon({
+                                    className: "bg-red-600 rounded-full w-8 h-8 flex items-center justify-center text-white border-2 border-white shadow-lg",
+                                    html: `<span class="text-xs font-bold">Dest</span>`,
+                                    iconSize: [32, 32]
+                                  })}
+                                >
+                                  <Popup>
+                                    <div className="text-sm">
+                                      <strong>Delivery</strong><br/>
+                                      {activeDelivery?.address}
+                                    </div>
+                                  </Popup>
+                                </Marker>
+                              )}
+
+                              {/* OSRM Route Shape OR Straight Line Fallback */}
+                              {routePath.length > 0 ? (
+                                <Polyline 
+                                  positions={routePath} 
+                                  color="#3B82F6" 
+                                  weight={4} 
+                                  opacity={0.8} 
+                                />
+                              ) : (
+                                driverLoc && deliveryLoc && (
+                                  <Polyline
+                                    positions={[
+                                      [driverLoc.lat, driverLoc.lng],
+                                      [deliveryLoc.lat, deliveryLoc.lng]
+                                    ]}
+                                    color="#3B82F6"
+                                    weight={4}
+                                    dashArray="10, 10"
+                                    opacity={0.5}
+                                  />
+                                )
+                              )}
+                            </MapContainer>
+                          );
+                        })()}
                       </div>
 
-                      <div className="space-y-3">
-                        <div>
-                          <Label className="text-xs">Route Name</Label>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {selectedRoute.name}
-                          </p>
+                      {/* Route Info Details */}
+                      <div className="space-y-3 pt-2">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-xs text-gray-500">Driver</Label>
+                            <p className="font-medium text-sm">
+                              {selectedRoute.driverName || "Unassigned"}
+                            </p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Status</Label>
+                            <Badge className={`mt-1 ${getRouteStatusColor(selectedRoute.status)}`}>
+                               {formatStatus(selectedRoute.status)}
+                            </Badge>
+                          </div>
                         </div>
                         <div>
-                          <Label className="text-xs">Assigned Driver</Label>
-                          <p className="text-[#222B2D] dark:text-white">
-                            {selectedRoute.driver || "Unassigned"}
-                          </p>
+                          <Label className="text-xs text-gray-500">Delivery Address</Label>
+                          {(() => {
+                             const d = deliveries.find(del => del.id === selectedRoute.id);
+                             return (
+                               <p className="text-sm truncate" title={d?.address}>
+                                 {d?.address || "Loading address..."}
+                               </p>
+                             );
+                          })()}
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="h-64 flex items-center justify-center text-center">
-                      <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                        Select a route to view details.
+                    <div className="h-64 flex flex-col items-center justify-center text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                      <Map className="w-10 h-10 text-gray-300 mb-2" />
+                      <p className="text-sm text-gray-500">
+                        Select a route from the list to view the map.
                       </p>
                     </div>
                   )}
@@ -818,7 +990,6 @@ useEffect(() => {
             </div>
           </div>
         </TabsContent>
-
 
         {/* Performance */}
         <TabsContent value="performance">
@@ -929,11 +1100,11 @@ useEffect(() => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Driver</TableHead>
-                      <TableHead>Deliveries</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="text-center">Date</TableHead>
+                      <TableHead className="text-center">Driver</TableHead>
+                      <TableHead className="text-center">Deliveries</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
 
@@ -953,11 +1124,11 @@ useEffect(() => {
                     ) : (
                       scheduleRows.map((s) => (
                         <TableRow key={s.id}>
-                          <TableCell>
+                          <TableCell className="text-center text-middle">
                             {new Date(s.schedule_date).toLocaleDateString()}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="text-center text-middle">
                             <div className="flex flex-col">
                               <span className="text-[#222B2D] dark:text-white">
                                 {s.driver_name ?? s.driver_id}
@@ -968,26 +1139,26 @@ useEffect(() => {
                             </div>
                           </TableCell>
 
-                          <TableCell>
-                            {s.deliveries_count} deliveries
+                          <TableCell className="text-center text-middle">
+                            {s.deliveries_count}
                           </TableCell>
 
-                          <TableCell>
+                          <TableCell className="text-center text-middle"> 
                             <Badge
-                              className={
+                              className={(
                                 s.status === "completed"
-                                  ? "bg-green-700 text-white"
+                                  ? "bg-green-100 text-green-700"
                                   : s.status === "in_progress" ||
                                     s.status === "in-progress"
-                                  ? "bg-blue-600 text-white"
-                                  : "bg-[#27AE60] text-white"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-gray-200 text-gray-700")
                               }
                             >
-                              {s.status}
+                              {formatStatus(s.status)}
                             </Badge>
                           </TableCell>
 
-                          <TableCell className="text-right">
+                          <TableCell className="text-center text-middle">
                             <Button variant="ghost" size="sm">
                               View
                             </Button>

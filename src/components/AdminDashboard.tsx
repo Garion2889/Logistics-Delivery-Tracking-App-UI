@@ -1,18 +1,17 @@
-
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
-import { Package, Truck, CheckCircle2, RotateCcw, UserPlus } from "lucide-react";
+import { Package, Truck, CheckCircle2, RotateCcw, UserPlus, MapPin } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { supabase } from "../utils/supabase/client";
 import { PanToSelectedDriver } from "./PanToSelectedDriver";
-import { AssignDriverModal } from "./AssignDriverModal";
+
+
+// --- Interfaces ---
 
 interface DashboardStats {
   pendingOrders: number;
@@ -32,6 +31,7 @@ interface LiveDriverLocation {
   longitude: number;
   recorded_at: string;
 }
+
 interface Driver {
   id?: string;
   name?: string;
@@ -46,6 +46,9 @@ interface PendingDelivery {
   status: string;
   assigned_driver: string | null;
   created_at: string;
+  // Added for geocoding support
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface DriverOption {
@@ -56,6 +59,8 @@ interface DriverOption {
   status: "online" | "offline";
   activeDeliveries: number;
 }
+
+// --- Helpers ---
 
 const stringToColor = (str?: string) => {
   if (!str) return "#888"; // fallback color for missing names
@@ -72,7 +77,7 @@ const getDriverIcon = (driver: { name?: string }) => {
 
   return L.divIcon({
     className: "driver-icon",
-    html: `<div class="driver-icon-wrapper" style="background-color: ${color};">
+    html: `<div class="driver-icon-wrapper" style="background-color: ${color}; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 50%; color: white; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
              ${firstLetter}
            </div>`,
     iconSize: [40, 40],
@@ -81,7 +86,7 @@ const getDriverIcon = (driver: { name?: string }) => {
   });
 };
 
-
+// --- Components ---
 
 export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
@@ -92,7 +97,11 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState<PendingDelivery | null>(null);
 
-  // Fetch driver info for name initials in markers
+  // ✅ NEW: State for OSRM Route Shape and Destination
+  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+  const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number, address: string} | null>(null);
+
+  // 1. Fetch driver info
   useEffect(() => {
     (async () => {
       const { data, error } = await supabase.from("drivers").select("id, name");
@@ -102,24 +111,23 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       }
 
       const driverMap: Record<string, Driver> = {};
-    data.forEach((driver: any) => {
-      driverMap[driver.id] = { id: driver.id, name: driver.name };
-    });
+      data.forEach((driver: any) => {
+        driverMap[driver.id] = { id: driver.id, name: driver.name };
+      });
 
-    setDrivers(driverMap);
+      setDrivers(driverMap);
     })();
-  }
-  , []);
+  }, []);
 
-  // Fetch pending deliveries and available drivers
+  // 2. Fetch pending deliveries and available drivers
   useEffect(() => {
     const fetchPendingDeliveries = async () => {
       const { data, error } = await supabase
         .from('deliveries')
-        .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at')
+        .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at, latitude, longitude')
         .eq('status', 'pending')
         .order('created_at', { ascending: false })
-        .limit(5); // Show only recent 5 pending deliveries
+        .limit(5);
 
       if (error) {
         console.error("Failed to fetch pending deliveries:", error);
@@ -146,7 +154,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         email: d.email || '',
         vehicle: `${d.vehicle_type} - ${d.plate_number || 'No plate'}`,
         status: d.status as "online" | "offline",
-        activeDeliveries: 0, // We'll calculate this if needed
+        activeDeliveries: 0,
       }));
 
       setAvailableDrivers(formattedDrivers);
@@ -156,7 +164,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     fetchAvailableDrivers();
   }, []);
 
-  // Subscribe to real-time driver GPS updates
+  // 3. Subscribe to real-time driver GPS updates
   useEffect(() => {
     const channel = supabase
       .channel("live-driver-locations")
@@ -184,20 +192,113 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     };
   }, []);
 
-  // Auto-select latest updated driver to pan map to
+  // Auto-select latest updated driver (optional, kept from previous behavior)
   useEffect(() => {
-    if (driverLocations.length === 0) {
-      setSelectedDriver(null);
+    if (driverLocations.length > 0 && !selectedDriver) {
+      const sortedDrivers = [...driverLocations].sort(
+        (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+      );
+      setSelectedDriver(sortedDrivers[0]);
+    }
+  }, [driverLocations, selectedDriver]);
+
+  // =================================================================
+  // ✅ 4. NEW: BATCH GEOCODING (Fix missing coords automatically)
+  // =================================================================
+  useEffect(() => {
+    const runBatchGeocode = async () => {
+      // Find pending or active deliveries with no coordinates
+      const { data } = await supabase.from("deliveries").select("id, address").is('latitude', null).limit(5);
+      
+      if (data && data.length > 0) {
+        for (const d of data) {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(d.address)}&limit=1`);
+            const geo = await res.json();
+            if (geo[0]) {
+              await supabase.from("deliveries").update({ 
+                latitude: parseFloat(geo[0].lat), 
+                longitude: parseFloat(geo[0].lon) 
+              }).eq("id", d.id);
+            }
+          } catch(e) { console.error("Batch geocode failed:", e); }
+          
+          await new Promise((r) => setTimeout(r, 1200)); // Rate limit
+        }
+      }
+    };
+    runBatchGeocode();
+  }, []);
+
+  // =================================================================
+  // ✅ 5. NEW: ROUTING LOGIC (Calculates route for selected driver)
+  // =================================================================
+  useEffect(() => {
+    // If no driver selected, clear map lines
+    if (!selectedDriver) {
+      setRoutePath([]);
+      setActiveDestination(null);
       return;
     }
 
-    // Sort by latest recorded_at descending
-    const sortedDrivers = [...driverLocations].sort(
-      (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
-    );
+    const calculateRoute = async () => {
+      // A. Find what this driver is currently working on (In Transit or Picked Up)
+      const { data: activeJob } = await supabase
+        .from('deliveries')
+        .select('id, latitude, longitude, address')
+        .eq('assigned_driver', selectedDriver.driver_id)
+        .in('status', ['in_transit', 'picked_up'])
+        .limit(1)
+        .single();
 
-    setSelectedDriver(sortedDrivers[0]);
-  }, [driverLocations]);
+      if (!activeJob) {
+        setRoutePath([]);
+        setActiveDestination(null);
+        return;
+      }
+
+      // B. If missing coords, try to quick geocode
+      let destLat = activeJob.latitude;
+      let destLng = activeJob.longitude;
+
+      if (!destLat || !destLng) {
+         try {
+           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(activeJob.address)}&limit=1`);
+           const geo = await res.json();
+           if (geo[0]) {
+             destLat = parseFloat(geo[0].lat);
+             destLng = parseFloat(geo[0].lon);
+           }
+         } catch (e) { return; }
+      }
+
+      if (destLat && destLng) {
+         setActiveDestination({ lat: destLat, lng: destLng, address: activeJob.address });
+
+         // C. Call OSRM Routing API
+         try {
+           const url = `https://router.project-osrm.org/route/v1/driving/${selectedDriver.longitude},${selectedDriver.latitude};${destLng},${destLat}?overview=full&geometries=geojson`;
+           const res = await fetch(url);
+           const json = await res.json();
+
+           if (json.routes && json.routes[0]) {
+             // Flip coords for Leaflet [lat, lng]
+             const path = json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+             setRoutePath(path);
+           } else {
+             // Fallback straight line
+             setRoutePath([[selectedDriver.latitude, selectedDriver.longitude], [destLat, destLng]]);
+           }
+         } catch (e) {
+           console.error("Routing error:", e);
+           // Fallback
+           setRoutePath([[selectedDriver.latitude, selectedDriver.longitude], [destLat, destLng]]);
+         }
+      }
+    };
+
+    calculateRoute();
+  }, [selectedDriver]); // Run when selectedDriver changes or updates location
 
   const deliveryStatusData = [
     { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
@@ -237,20 +338,13 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     },
   ];
 
-  // Default Leaflet marker icon
-  const defaultIcon = new L.Icon({
-    iconUrl: markerIcon,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowUrl: markerShadow,
-    shadowSize: [41, 41],
-  });
-
   // Handler for opening assign modal
   const handleAssignDriver = (delivery: PendingDelivery) => {
     setSelectedDelivery(delivery);
     setAssignModalOpen(true);
+    // Clear route when selecting a new delivery to avoid confusion
+    setRoutePath([]);
+    setActiveDestination(null);
   };
 
   // Handler for assigning driver
@@ -323,86 +417,194 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         })}
       </div>
 
-      {/* Delivery Status Chart */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Delivery Status</CardTitle>
-            <div className="flex items-center gap-1 text-[#27AE60]">
-              <span className="text-sm">{stats.successRate}% Success</span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={deliveryStatusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {deliveryStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            {deliveryStatusData.map((item) => (
-              <div key={item.name} className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                ></div>
-                <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
-                  {item.name}: {item.value}
-                </span>
+      {/* Main Content Area: Charts & Map */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left Column: Charts & Tables */}
+        <div className="lg:col-span-1 space-y-6">
+           {/* Delivery Status Chart */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Delivery Status</CardTitle>
+                <div className="flex items-center gap-1 text-[#27AE60]">
+                  <span className="text-sm">{stats.successRate}% Success</span>
+                </div>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-center">
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={deliveryStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {deliveryStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                {deliveryStatusData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    ></div>
+                    <span className="text-xs text-[#222B2D]/60 dark:text-white/60">
+                      {item.name}: {item.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Leaflet Map */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <CardTitle>Live Driver Tracking</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <MapContainer
-            center={selectedDriver ? [selectedDriver.latitude, selectedDriver.longitude] : [14.5995, 120.9842]}
-            zoom={13}
-            style={{ height: "400px", width: "100%" }}
-          >
-            <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; OpenStreetMap contributors'
-            />
-            <PanToSelectedDriver 
-              selectedDriver={selectedDriver ? { 
-                location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } 
-              } : null} role = "driver"
-            />
-            {driverLocations.map((driver) => (
+       {/* Right Column: Map & Live Tracking */}
+<div className="lg:col-span-2 space-y-6">
+  <Card className="border-0 shadow-sm">
+    <CardHeader>
+      <CardTitle>Live Driver Tracking</CardTitle>
+    </CardHeader>
+
+    <CardContent className="p-0">
+      <div className="w-full relative" style={{ height: "365px" }}>
+        <MapContainer
+          center={
+            selectedDriver?.latitude && selectedDriver?.longitude
+              ? [selectedDriver.latitude, selectedDriver.longitude]
+              : [14.5995, 120.9842] // Manila fallback
+          }
+          zoom={13}
+          style={{ height: "100%", width: "100%" }}   // <- guaranteed height
+        >
+          {/* Tile Layer */}
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
+          />
+
+          {/* Auto-Pan */}
+          <PanToSelectedDriver
+            selectedDriver={
+              selectedDriver &&
+              selectedDriver.latitude &&
+              selectedDriver.longitude
+                ? { location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } }
+                : null
+            }
+            role="driver"
+          />
+
+          {/* Route Path */}
+          {Array.isArray(routePath) &&
+            routePath.length > 0 &&
+            routePath.every((p) => Array.isArray(p) && p.length === 2) && (
+              <Polyline
+                positions={routePath}
+                color="#3B82F6"
+                weight={6}
+                opacity={0.7}
+              />
+            )}
+
+          {/* Destination Marker */}
+          {activeDestination?.lat && activeDestination?.lng && (
+            <Marker
+              position={[activeDestination.lat, activeDestination.lng]}
+              icon={L.divIcon({
+                className:
+                  "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow-lg",
+                iconSize: [16, 16],
+              })}
+            >
+              <Popup>
+                <strong className="text-xs">Destination</strong>
+                <br />
+                <span className="text-xs">{activeDestination.address}</span>
+              </Popup>
+            </Marker>
+          )}
+
+          {/* Driver Markers */}
+          {driverLocations
+            .filter(
+              (d) =>
+                d.latitude &&
+                d.longitude &&
+                !isNaN(d.latitude) &&
+                !isNaN(d.longitude)
+            )
+            .map((driver) => (
               <Marker
                 key={driver.driver_id}
                 position={[driver.latitude, driver.longitude]}
                 icon={getDriverIcon(drivers[driver.driver_id] || {})}
+                eventHandlers={{
+                  click: () => setSelectedDriver(driver),
+                }}
               >
                 <Popup>
-                  <b>Driver:</b>  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
-                  <b>Last update:</b> {new Date(driver.recorded_at).toLocaleTimeString()}
+                  <b>Driver:</b>{" "}
+                  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
+                  <b>Last update:</b>{" "}
+                  {new Date(driver.recorded_at).toLocaleTimeString()}
                 </Popup>
               </Marker>
             ))}
-          </MapContainer>
-        </CardContent>
+        </MapContainer>
+
+        {/* Destination Overlay */}
+        {activeDestination && (
+          <div className="absolute bottom-4 left-4 right-4 bg-white/90 p-3 rounded-lg shadow-lg z-[1000] border text-xs flex justify-between items-center">
+            <div>
+              <strong className="block text-gray-500 uppercase text-[10px]">
+                Heading To
+              </strong>
+              <span className="font-medium truncate max-w-[200px] block">
+                {activeDestination.address}
+              </span>
+            </div>
+            <Badge className="bg-blue-600">En Route</Badge>
+          </div>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+</div>
+
+
+      </div>
+
+      {/* Pending Orders List */}
+      <Card className="border-0 shadow-sm mt-6">
+         <CardHeader><CardTitle>Pending Orders</CardTitle></CardHeader>
+         <CardContent>
+             {/* Add your pending orders table here if needed, using pendingDeliveries state */}
+             <div className="space-y-2">
+                {pendingDeliveries.map(order => (
+                    <div key={order.id} className="flex justify-between items-center p-3 border rounded-lg hover:bg-gray-50">
+                        <div>
+                            <p className="font-medium">{order.ref_no} - {order.customer_name}</p>
+                            <p className="text-xs text-gray-500">{order.address}</p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => handleAssignDriver(order)}>
+                            <UserPlus className="w-4 h-4 mr-2" /> Assign Driver
+                        </Button>
+                    </div>
+                ))}
+                {pendingDeliveries.length === 0 && <p className="text-center text-gray-500 py-4">No pending orders.</p>}
+             </div>
+         </CardContent>
       </Card>
     </div>
   );
