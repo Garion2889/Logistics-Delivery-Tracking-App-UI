@@ -155,13 +155,13 @@ export function EditDriverModal({
           <div className="space-y-2">
             <Label htmlFor="vehicle">Vehicle Type</Label>
             {/* Vehicle Type is the ONLY editable field */}
-            <Select
+            <Select 
               value={formData.vehicle}
               onValueChange={(value) =>
                 setFormData({ ...formData, vehicle: value })
               }
             >
-              <SelectTrigger id="vehicle">
+              <SelectTrigger id="vehicle" className="hover:bg-gray-100">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
