@@ -143,14 +143,6 @@ export function DriverCard({
           >
             <Edit className="w-3.5 h-3.5" />
           </Button>
-          <Button
-            onClick={() => onDeactivate(driver.id)}
-            variant="outline"
-            size="sm"
-            className="h-8 px-3 border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-          >
-            <UserX className="w-3.5 h-3.5" />
-          </Button>
         </div>
       </CardContent>
     </Card>
