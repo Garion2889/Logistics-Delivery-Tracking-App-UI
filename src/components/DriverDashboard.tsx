@@ -204,7 +204,7 @@ export function DriverDashboard({
       const { data, error } = await supabase
         .from("drivers")
         .select("last_lat, last_lng")
-        .eq("id", driverId)
+        .eq("user_id", driverId)
         .single();
 
       if (!error && data?.last_lat && data?.last_lng) {
@@ -222,7 +222,7 @@ export function DriverDashboard({
           event: "UPDATE",
           schema: "public",
           table: "drivers",
-          filter: `id=eq.${driverId}`,
+          filter: `users_id=eq.${driverId}`,
         },
         (payload) => {
           const { last_lat, last_lng } = payload.new as any;
