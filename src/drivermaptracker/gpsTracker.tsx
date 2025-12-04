@@ -29,7 +29,7 @@ export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoor
 
     const sendLocation = async (coords: GPSCoords) => {
       const now = Date.now();
-      if (now - lastUpdateRef.current < 1000) return; // throttle: 5 seconds
+
       lastUpdateRef.current = now;
 
       const { latitude, longitude, accuracy, speed, heading, altitude } = coords;
