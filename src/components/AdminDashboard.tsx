@@ -34,8 +34,8 @@ interface LiveDriverLocation {
 }
 
 interface Driver {
-  id?: string;
-  name?: string;
+  id: string;
+  name: string;
   status?: string;
 }
 
@@ -89,79 +89,84 @@ const getDriverIcon = (driver: { name?: string }) => {
 
 // --- Main Component ---
 
-// ✅ Ensure this says 'export function AdminDashboard'
 export function AdminDashboard({ stats }: AdminDashboardProps) {
   const [driverLocations, setDriverLocations] = useState<LiveDriverLocation[]>([]);
   const [selectedDriver, setSelectedDriver] = useState<LiveDriverLocation | null>(null);
+  
+  // State for Map Lookups (Record)
   const [drivers, setDrivers] = useState<Record<string, Driver>>({});
-  const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([]);
+  
+  // State for Modal Dropdown (Array)
   const [availableDrivers, setAvailableDrivers] = useState<DriverOption[]>([]);
+  
+  const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([]);
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [selectedDelivery, setSelectedDelivery] = useState<PendingDelivery | null>(null);
 
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number, address: string} | null>(null);
 
-  // 1. Fetch driver info
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase.from("drivers").select("id, name");
-      if (error) {
-        console.error("Failed to fetch drivers:", error);
-        return;
-      }
+  // 1. Unified Fetch Drivers Function
+  // Inside AdminDashboard.tsx
 
+const fetchDriversData = async () => {
+  try {
+    // UPDATED: Select email and phone as well
+    const { data, error } = await supabase
+      .from("drivers")
+      .select("id, name, user_id, status, email, phone"); // <--- Added fields
+
+    if (error) throw error;
+
+    if (data) {
+      // A. Populate Map Lookup (Record)
       const driverMap: Record<string, Driver> = {};
-      data.forEach((driver: any) => {
-        driverMap[driver.id] = { id: driver.id, name: driver.name };
+      data.forEach((d: any) => {
+        driverMap[d.id] = { ...d }; // Store full object
       });
-
       setDrivers(driverMap);
-    })();
-  }, []);
 
-  // 2. Fetch pending deliveries
-  useEffect(() => {
-    const fetchPendingDeliveries = async () => {
-      const { data, error } = await supabase
-        .from('deliveries')
-        .select('id, ref_no, customer_name, address, status, assigned_driver, created_at, latitude, longitude')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (error) {
-        console.error("Failed to fetch pending deliveries:", error);
-        return;
-      }
-      setPendingDeliveries(data || []);
-    };
-
-    const fetchAvailableDrivers = async () => {
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('id, name , status')
-        .in('status', ['online', 'Offline']);
-
-      if (error) {
-        console.error("Failed to fetch available drivers:", error);
-        return;
-      }
-
-      const formattedDrivers: DriverOption[] = (data || []).map(d => ({
-        id: d.id,
-        name: d.name || 'Unknown Driver',
-        status: d.status as "online" | "Offline",
-        activeDeliveries: 0,
-      }));
+      // B. Populate Available Drivers (unchanged logic)
+      const formattedDrivers: DriverOption[] = data
+        .filter((d: any) => ['online', 'offline'].includes(d.status?.toLowerCase()))
+        .map((d: any) => ({
+          id: d.id,
+          name: d.name || 'Unknown Driver',
+          email: d.email || '',
+          vehicle: 'Motorcycle', 
+          status: d.status as "online" | "offline",
+          activeDeliveries: 0,
+        }));
       setAvailableDrivers(formattedDrivers);
-    };
+    }
+  } catch (error) {
+    console.error("Error fetching drivers:", error);
+  }
+};
 
+  // 2. Fetch Pending Deliveries
+  const fetchPendingDeliveries = async () => {
+    const { data, error } = await supabase
+      .from('deliveries')
+      .select('id, ref_no, customer_name, address, status, assigned_driver, created_at, latitude, longitude')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (error) {
+      console.error("Failed to fetch pending deliveries:", error);
+      return;
+    }
+    setPendingDeliveries(data || []);
+  };
+
+  // 3. Initial Load
+  useEffect(() => {
+    fetchDriversData();
     fetchPendingDeliveries();
-    fetchAvailableDrivers();
   }, []);
 
-  // 3. Subscribe to locations
+  // 4. Subscribe to Live Locations
   useEffect(() => {
     const channel = supabase
       .channel("live-driver-locations")
@@ -184,10 +189,15 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // 4. Auto-Geocode
+  // 5. Auto-Geocode (Safe Batching)
   useEffect(() => {
     const runBatchGeocode = async () => {
-      const { data } = await supabase.from("deliveries").select("id, address").is('latitude', null).limit(5);
+      const { data } = await supabase
+        .from("deliveries")
+        .select("id, address")
+        .is('latitude', null)
+        .limit(5);
+        
       if (data && data.length > 0) {
         for (const d of data) {
           try {
@@ -200,6 +210,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
               }).eq("id", d.id);
             }
           } catch(e) { console.error("Batch geocode failed:", e); }
+          // Rate limiting respect
           await new Promise((r) => setTimeout(r, 1200));
         }
       }
@@ -207,7 +218,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     runBatchGeocode();
   }, []);
 
-  // 5. Route Calculation
+  // 6. Route Calculation
   useEffect(() => {
     if (!selectedDriver) {
       setRoutePath([]);
@@ -216,6 +227,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     }
 
     const calculateRoute = async () => {
+      // Find active job for selected driver
       const { data: activeJob } = await supabase
         .from('deliveries')
         .select('id, latitude, longitude, address')
@@ -233,6 +245,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       let destLat = activeJob.latitude;
       let destLng = activeJob.longitude;
 
+      // Geocode destination if missing coords
       if (!destLat || !destLng) {
          try {
            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(activeJob.address)}&limit=1`);
@@ -281,6 +294,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       setPendingDeliveries(prev => prev.filter(d => d.id !== selectedDelivery.id));
       setAssignModalOpen(false);
       setSelectedDelivery(null);
+      fetchDriversData(); // Refresh counts if needed
     }
   };
 
@@ -295,13 +309,12 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     { title: "Active Deliveries", value: stats.activeDeliveries, icon: Truck, color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
     { title: "Completed", value: stats.completedDeliveries, icon: CheckCircle2, color: "text-[#27AE60]", bgColor: "bg-green-50 dark:bg-green-900/20" },
     {
-  title: "Online Drivers",
-  value: availableDrivers.filter(d => d.status === "online").length,
-  icon: Users,
-  color: "text-purple-600",
-  bgColor: "bg-purple-50 dark:bg-purple-900/20",
-}
-
+      title: "Online Drivers",
+      value: availableDrivers.filter(d => d.status === "online").length,
+      icon: Users,
+      color: "text-purple-600",
+      bgColor: "bg-purple-50 dark:bg-purple-900/20",
+    }
   ];
 
   return (
@@ -329,7 +342,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Charts */}
+        {/* Left Column: Charts */}
         <div className="lg:col-span-1 space-y-6">
            <Card className="border-0 shadow-sm">
             <CardHeader>
@@ -360,109 +373,89 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
           </Card>
         </div>
 
-       {/* Right Column: Map & Live Tracking */}
-<div className="lg:col-span-2 space-y-6">
-  <Card className="border-0 shadow-sm">
-    <CardHeader>
-      <CardTitle>Live Driver Tracking</CardTitle>
-    </CardHeader>
+        {/* Right Column: Map & Live Tracking */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <CardTitle>Live Driver Tracking</CardTitle>
+            </CardHeader>
 
-    <CardContent className="p-0">
-      <div className="w-full relative" style={{ height: "460px" }}>
-        <MapContainer
-          center={
-            selectedDriver?.latitude && selectedDriver?.longitude
-              ? [selectedDriver.latitude, selectedDriver.longitude]
-              : [14.5995, 120.9842] // Manila fallback
-          }
-          zoom={13}
-          style={{ height: "100%", width: "100%" }}   // <- guaranteed height
-        >
-          {/* Tile Layer */}
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution="&copy; OpenStreetMap contributors"
-          />
+            <CardContent className="p-0">
+              <div className="w-full relative" style={{ height: "460px" }}>
+                <MapContainer
+                  center={
+                    selectedDriver?.latitude && selectedDriver?.longitude
+                      ? [selectedDriver.latitude, selectedDriver.longitude]
+                      : [14.5995, 120.9842] // Manila fallback
+                  }
+                  zoom={13}
+                  style={{ height: "100%", width: "100%" }}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution="&copy; OpenStreetMap contributors"
+                  />
 
-          {/* Auto-Pan */}
-          <PanToSelectedDriver
-            selectedDriver={
-              selectedDriver &&
-              selectedDriver.latitude &&
-              selectedDriver.longitude
-                ? { location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } }
-                : null
-            }
-            role="driver"
-          />
+                  <PanToSelectedDriver
+                    selectedDriver={
+                      selectedDriver && selectedDriver.latitude && selectedDriver.longitude
+                        ? { location: { lat: selectedDriver.latitude, lng: selectedDriver.longitude } }
+                        : null
+                    }
+                    role="driver"
+                  />
 
-          {/* Route Path */}
-          {Array.isArray(routePath) &&
-            routePath.length > 0 &&
-            routePath.every((p) => Array.isArray(p) && p.length === 2) && (
-              <Polyline
-                positions={routePath}
-                color="#3B82F6"
-                weight={6}
-                opacity={0.7}
-              />
-            )}
+                  {/* Route Path */}
+                  {Array.isArray(routePath) && routePath.length > 0 && (
+                    <Polyline
+                      positions={routePath}
+                      color="#3B82F6"
+                      weight={6}
+                      opacity={0.7}
+                    />
+                  )}
 
-          {/* Destination Marker */}
-          {activeDestination?.lat && activeDestination?.lng && (
-            <Marker
-              position={[activeDestination.lat, activeDestination.lng]}
-              icon={L.divIcon({
-                className:
-                  "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow-lg",
-                iconSize: [16, 16],
-              })}
-            >
-              <Popup>
-                <strong className="text-xs">Destination</strong>
-                <br />
-                <span className="text-xs">{activeDestination.address}</span>
-              </Popup>
-            </Marker>
-          )}
+                  {/* Destination Marker */}
+                  {activeDestination?.lat && activeDestination?.lng && (
+                    <Marker
+                      position={[activeDestination.lat, activeDestination.lng]}
+                      icon={L.divIcon({
+                        className:
+                          "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow-lg",
+                        iconSize: [16, 16],
+                      })}
+                    >
+                      <Popup>
+                        <strong className="text-xs">Destination</strong><br />
+                        <span className="text-xs">{activeDestination.address}</span>
+                      </Popup>
+                    </Marker>
+                  )}
 
-          {/* Driver Markers */}
-          {driverLocations
-            .filter(
-              (d) =>
-                d.latitude &&
-                d.longitude &&
-                !isNaN(d.latitude) &&
-                !isNaN(d.longitude)
-            )
-            .map((driver) => (
-              <Marker
-                key={driver.driver_id}
-                position={[driver.latitude, driver.longitude]}
-                icon={getDriverIcon(drivers[driver.driver_id] || {})}
-                eventHandlers={{
-                  click: () => setSelectedDriver(driver),
-                }}
-              >
-                <Popup>
-                  <b>Driver:</b>{" "}
-                  {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
-                  <b>Last update:</b>{" "}
-                  {new Date(driver.recorded_at).toLocaleTimeString()}
-                </Popup>
-              </Marker>
-            ))}
-        </MapContainer>
-
-        {/* Destination Overlay */}
+                  {/* Driver Markers */}
+                  {driverLocations
+                    .filter(d => d.latitude && d.longitude && !isNaN(d.latitude) && !isNaN(d.longitude))
+                    .map((driver) => (
+                      <Marker
+                        key={driver.driver_id}
+                        position={[driver.latitude, driver.longitude]}
+                        icon={getDriverIcon(drivers[driver.driver_id] || {})}
+                        eventHandlers={{
+                          click: () => setSelectedDriver(driver),
+                        }}
+                      >
+                        <Popup>
+                          <b>Driver:</b> {drivers[driver.driver_id]?.name ?? "Unknown"} <br />
+                          <b>Last update:</b> {new Date(driver.recorded_at).toLocaleTimeString()}
+                        </Popup>
+                      </Marker>
+                    ))}
+                </MapContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </CardContent>
-  </Card>
-</div>
-
-      </div>
-
-     
 
       <AssignDriverModal
         open={assignModalOpen}
