@@ -113,18 +113,9 @@ export default function App() {
   // ---------- Handlers ----------
 
   const handleLogin = async (token: string, role: "admin" | "driver", id: string) => {
-  setUserId(id);
-  setUserRole(role);
-  setCurrentView(role);
-
-  // Persist session info
-  localStorage.setItem("userId", id);
-  localStorage.setItem("userRole", role);
-
-  // Get current session from Supabase
+  // Get current session from Supabase first
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData?.session?.access_token;
-
 
   if (!accessToken) {
     toast.error("Login failed: no active session token");
@@ -133,7 +124,24 @@ export default function App() {
 
   localStorage.setItem("supabaseAccessToken", accessToken);
 
-  toast.success(`Welcome back! Logged in as ${role}`);
+  // Determine actual role by checking if ID exists in drivers table
+  const { data: driverData } = await supabase
+    .from('drivers')
+    .select('id')
+    .eq('user_id', id)
+    .single();
+
+  const actualRole = driverData ? "driver" : "admin";
+
+  setUserId(id);
+  setUserRole(actualRole);
+  setCurrentView(actualRole);
+
+  // Persist session info with correct role
+  localStorage.setItem("userId", id);
+  localStorage.setItem("userRole", actualRole);
+
+  toast.success(`Welcome back! Logged in as ${actualRole}`);
 };
 
 
@@ -447,9 +455,9 @@ const handleDeactivateDriver = async (driverId: string) => {
         customer: d.customer_name,
         address: d.address,
         status: mapStatus(d.status),
-        driver: d.driver_info?.user_info?.full_name,
+        driver: d.driver_info?.id,
         createdAt: new Date(d.created_at).toLocaleString(),
-        updateAt: new Date(d.updated_at).toLocaleString(),
+        updatedAt: new Date(d.updated_at).toLocaleString(),
         phone: d.customer_phone,
         amount: d.total_amount,
       }));
