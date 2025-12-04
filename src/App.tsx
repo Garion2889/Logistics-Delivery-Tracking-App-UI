@@ -119,26 +119,76 @@ export default function App() {
 
   // ---------- Handlers ----------
 
-  const handleLogin = async (token: string, role: "admin" | "driver", id: string) => {
-    // 1. Store the token (Even if it's a placeholder from Custom Auth)
-    localStorage.setItem("supabaseAccessToken", token);
-    localStorage.setItem("userId", id);
-    localStorage.setItem("userRole", role);
-
-    // 2. Set State
-    setUserId(id);
-    setUserRole(role);
-    setCurrentView(role);
-
-    // 3. Optional: Set supabase session if it's a real JWT (Standard Auth)
-    // If it's custom auth, this might fail or do nothing, which is fine.
-    if (token && token.length > 50) { // Simple check if it looks like a JWT
-        await supabase.auth.setSession({ access_token: token, refresh_token: "" });
-    }
-
-    toast.success(`Welcome back! Logged in as ${role}`);
-  };
-
+    const handleAdminLogin = (token: string, profile: any) => {
+      // For admins, we'll use their user_id.
+      const adminId = profile.user_id || profile.id;
+      localStorage.setItem("supabaseAccessToken", token);
+      localStorage.setItem("userId", adminId);
+      localStorage.setItem("userRole", "admin");
+  
+      setUserId(adminId);
+      setUserRole("admin");
+      setCurrentView("admin");
+  
+      if (token && token.length > 50) {
+        supabase.auth.setSession({ access_token: token, refresh_token: "" });
+      }
+      toast.success(`Welcome back, ${profile.first_name || 'Admin'}!`);
+    };
+  
+    const handleDriverLogin = (token: string, profile: any) => {
+      // The profile is the rich object from supabase with user_info nested.
+      // We construct a flat Driver object that matches the app's interface.
+      const driverProfile: Driver = {
+          id: profile.id,
+          user_id: profile.user_id,
+          name: profile.user_info.full_name,
+          email: profile.user_info.email,
+          phone: profile.user_info.phone,
+          status: profile.status ?? "offline",
+          vehicle_type: profile.vehicle_type,
+          plate_number: profile.plate_number,
+          license_number: profile.license_number,
+          is_active: profile.is_active,
+          created_at: profile.created_at,
+          updated_at: profile.updated_at,
+          // Optional fields from Driver interface that may not be in profile
+          last_lat: profile.last_lat,
+          last_lng: profile.last_lng,
+          last_location_update: profile.last_location_update,
+          rating: profile.rating,
+          completedDeliveries: profile.completedDeliveries,
+          avatar: profile.avatar,
+          isDeactivated: profile.isDeactivated,
+          deactivationReason: profile.deactivationReason,
+          deactivatedAt: profile.deactivatedAt,
+      };
+  
+      // For drivers, we use the 'id' from the 'drivers' table.
+      const driverId = driverProfile.id;
+      localStorage.setItem("supabaseAccessToken", token);
+  localStorage.setItem("userId", driverId);
+      localStorage.setItem("userRole", "driver");
+  
+      setUserId(driverId); // This is used by useGPSUploader
+      setUserRole("driver");
+      setCurrentView("driver");
+  
+      // Update the drivers state with the logged-in driver's full info
+      setDrivers(prev => {
+          const exists = prev.some(d => d.id === driverProfile.id);
+          if (exists) {
+              return prev.map(d => d.id === driverProfile.id ? driverProfile : d);
+          }
+          return [driverProfile, ...prev];
+      });
+  
+      if (token && token.length > 50) {
+        supabase.auth.setSession({ access_token: token, refresh_token: "" });
+      }
+  
+      toast.success(`Welcome back, ${driverProfile.name}!`);
+    };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -506,7 +556,11 @@ const handleDeactivateDriver = async (driverId: string) => {
     case "login":
       return (
         <>
-          <LoginPageWithAuth onLogin={handleLogin} onShowTracking={() => setCurrentView("tracking")} />
+          <LoginPageWithAuth
+            onAdminLogin={handleAdminLogin}
+            onDriverLogin={handleDriverLogin}
+            onShowTracking={() => setCurrentView("tracking")}
+          />
           <Toaster />
         </>
       );
