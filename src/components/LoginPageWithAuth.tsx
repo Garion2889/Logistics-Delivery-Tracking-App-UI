@@ -7,13 +7,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Truck, ArrowRight } from "lucide-react";
 import { projectId } from "../utils/supabase/info";
 import { toast } from "sonner";
+import { supabase } from "../utils/supabase/client";
 
 interface LoginPageWithAuthProps {
-  onLogin: (token: string, role: "admin" | "driver", id: string) => void;
+  onAdminLogin: (token: string, profile: any) => void;
+  onDriverLogin: (token: string, profile: any) => void;
   onShowTracking: () => void;
 }
 
-export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuthProps) {
+export function LoginPageWithAuth({ onAdminLogin, onDriverLogin, onShowTracking }: LoginPageWithAuthProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -45,27 +47,39 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
         throw new Error(data.error || "Login failed");
       }
 
-      // 1. Validate Roles against the Selected Tab
-      if (activeTab === "admin" && data.user.role !== "admin") {
-        toast.error("This account is not an admin account");
-        setLoading(false);
-        return;
+      const sessionToken = "custom-auth-token"; // Placeholder
+
+      if (activeTab === 'admin') {
+          if (data.user.role !== 'admin') {
+              toast.error("This account is not an admin account");
+              setLoading(false);
+              return;
+          }
+          toast.success(`Welcome back, ${data.employee.first_name}`);
+          onAdminLogin(sessionToken, data.employee);
+      } else { // driver
+          if (data.user.role !== 'driver') {
+              toast.error("This account is not a driver account");
+              setLoading(false);
+              return;
+          }
+
+          // when the drivers logs in, it retrieves their information
+          const { data: driverData, error: driverError } = await supabase
+              .from('drivers')
+              .select(`
+                  *,
+                  user_info:logistics_users!user_id(*)
+              `)
+              .eq('user_id', data.user.user_id)
+              .single();
+          
+          if (driverError) throw driverError;
+          
+          toast.success(`Welcome back, ${driverData.user_info.full_name}`);
+          // and use drivers.id as data.user.id implicitly by passing the whole object
+          onDriverLogin(sessionToken, driverData);
       }
-
-      if (activeTab === "driver" && data.user.role !== "driver") {
-        toast.error("This account is not a driver account");
-        setLoading(false);
-        return;
-      }
-
-      // 2. Success Message
-      toast.success(`Welcome back, ${data.employee.first_name}`);
-
-      // 3. Complete Login
-      // Since Custom Auth doesn't return a session token, we use a placeholder or the ID.
-      // We pass the User ID (auth.users.id) to App.tsx to handle the rest.
-      const sessionToken = "custom-auth-token"; 
-      onLogin(sessionToken, data.user.role, data.user.user_id);
 
     } catch (err: any) {
       console.error("Login error:", err);

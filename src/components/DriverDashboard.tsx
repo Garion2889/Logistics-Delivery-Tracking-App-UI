@@ -76,6 +76,7 @@ export function DriverDashboard({
   isDarkMode,
   onToggleDarkMode,
 }: DriverDashboardProps) {
+  console.log('DriverDashboard received driverId:', driverId);
   const [deliveries, setDeliveries] = useState<DriverDelivery[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
