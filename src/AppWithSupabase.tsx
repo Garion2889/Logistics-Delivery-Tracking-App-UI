@@ -53,6 +53,10 @@ interface Delivery {
   status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
   driver?: string;
   createdAt: string;
+  // NEW: Added these fields to match your DeliveryDetail component
+  assignedAt?: string;
+  inTransitAt?: string;
+  deliveredAt?: string;
   phone?: string;
   amount?: number;
 }
@@ -89,8 +93,6 @@ export default function AppWithSupabase() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(false);
 
-
-  
   // Fetch deliveries from Supabase
   const fetchDeliveries = async () => {
     try {
@@ -117,7 +119,15 @@ export default function AppWithSupabase() {
         paymentType: d.payment_type === 'cod' ? 'COD' : 'Paid',
         status: mapStatus(d.status),
         driver: d.driver_info?.user_info?.full_name,
-        createdAt: new Date(d.created_at).toLocaleString(),
+        createdAt: d.created_at, // Send raw ISO string, let component format it
+        
+        // --- FIX STARTS HERE ---
+        // Map the database columns to the frontend fields
+        assignedAt: d.assigned_at,       
+        inTransitAt: d.in_transit_at,    
+        deliveredAt: d.delivered_at,     
+        // --- FIX ENDS HERE ---
+
         phone: d.customer_phone,
         amount: d.total_amount,
       }));
