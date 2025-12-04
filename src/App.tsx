@@ -34,7 +34,6 @@ interface Delivery {
   address: string;
   status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
   driver?: string;
-  driverId?: string;
   createdAt: string;
   updatedAt: string;
   phone?: string;
@@ -454,8 +453,7 @@ const handleDeactivateDriver = async (driverId: string) => {
         customer: d.customer_name,
         address: d.address,
         status: mapStatus(d.status),
-        driver: d.driver_info?.user_info?.full_name,
-        driverId: d.driver_info?.id,
+        driver: d.driver_info?.id,
         createdAt: new Date(d.created_at).toLocaleString(),
         updatedAt: new Date(d.updated_at).toLocaleString(),
         phone: d.customer_phone,
@@ -497,9 +495,9 @@ const handleDeactivateDriver = async (driverId: string) => {
   };
 
   const driverStats = {
-    total: deliveries.filter(d => d.driverId === userId && (d.status === "assigned" || d.status === "in-transit")).length,
-    completed: deliveries.filter(d => d.driverId === userId && d.status === "delivered").length,
-    returned: deliveries.filter(d => d.driverId === userId && d.status === "returned").length,
+    total: deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit")).length,
+    completed: deliveries.filter(d => d.driver === userId && d.status === "delivered").length,
+    returned: deliveries.filter(d => d.driver === userId && d.status === "returned").length,
   };
 
   // ---------- Render ----------
@@ -519,13 +517,14 @@ const handleDeactivateDriver = async (driverId: string) => {
     case "driver":
       return (
         <DriverDashboard
-          driverId={userId}
-          driverName={drivers.find(d => d.id === userId)?.name || "Driver"}
+          deliveries={driverDeliveries}
           onUpdateStatus={handleUpdateDeliveryStatus}
           onUploadPOD={handleUploadPOD}
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
           onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
+          driverName={drivers.find(d => d.id === userId)?.name || "Driver"}
+          stats={driverStats}
         />
       );
 

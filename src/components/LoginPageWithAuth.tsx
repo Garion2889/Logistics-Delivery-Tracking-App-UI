@@ -65,7 +65,7 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
       // Since Custom Auth doesn't return a session token, we use a placeholder or the ID.
       // We pass the User ID (auth.users.id) to App.tsx to handle the rest.
       const sessionToken = "custom-auth-token"; 
-      onLogin(sessionToken, data.user.role, data.user.id);
+      onLogin(sessionToken, data.user.role, data.user.user_id);
 
     } catch (err: any) {
       console.error("Login error:", err);

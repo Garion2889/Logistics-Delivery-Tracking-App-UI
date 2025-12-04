@@ -12,6 +12,13 @@ interface GPSCoords {
 
 export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoords) {
   const lastUpdateRef = useRef<number>(0);
+  const fallbackCoordsRef = useRef(fallbackCoords);
+
+  // By storing fallbackCoords in a ref, we prevent the main effect from re-running
+  // if the parent component passes a new object identity on each render.
+  useEffect(() => {
+    fallbackCoordsRef.current = fallbackCoords;
+  }, [fallbackCoords]);
 
   useEffect(() => {
     // 1. Don't start tracking until we have a valid Driver ID
@@ -35,15 +42,14 @@ export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoor
 
       console.log(`GPS: Sending Update -> [${latitude}, ${longitude}]`);
 
-      const { error } = await supabase.rpc("update_driver_location", {
-        p_driver_id: driverId,
-        p_lat: latitude,
-        p_lng: longitude,
-        p_accuracy: accuracy ?? null,
-        p_speed: speed ?? null,
-        p_heading: heading ?? null,
-        p_altitude: altitude ?? null,
-      });
+      const { error } = await supabase
+        .from('drivers')
+        .update({
+          last_lat: latitude,
+          last_lng: longitude,
+          last_location_update: new Date().toISOString(),
+        })
+        .eq('id', driverId);
 
       if (error) {
         console.error("GPS RPC Error:", error.message);
@@ -56,7 +62,8 @@ export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoor
       // 3. Browser Permission Check
       if (!navigator.geolocation) {
         console.error("GPS: Geolocation not supported");
-        if (fallbackCoords) await sendLocation(fallbackCoords);
+        // Use the ref to get the latest fallback coordinates
+        if (fallbackCoordsRef.current) await sendLocation(fallbackCoordsRef.current);
         return;
       }
 
@@ -69,8 +76,9 @@ export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoor
         async (err) => {
           // Error callback
           console.error("GPS Device Error:", err.message);
-          if ((err.code === 2 || err.code === 3) && fallbackCoords) {
-            await sendLocation(fallbackCoords);
+           // Use the ref to get the latest fallback coordinates
+          if ((err.code === 2 || err.code === 3) && fallbackCoordsRef.current) {
+            await sendLocation(fallbackCoordsRef.current);
           }
         },
         { 
@@ -86,5 +94,5 @@ export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoor
     return () => {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     };
-  }, [driverId, fallbackCoords]);
+  }, [driverId]); // Only re-run when the driverId changes
 }
