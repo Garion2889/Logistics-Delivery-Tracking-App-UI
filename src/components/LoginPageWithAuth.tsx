@@ -3,13 +3,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
-import { supabase } from "../utils/supabase/client";
+// Note: We don't need supabase client for auth anymore if using custom edge function
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Truck, ArrowRight } from "lucide-react";
 import { projectId } from "../utils/supabase/info";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner"; // Removed version number for import
 
 interface LoginPageWithAuthProps {
+  // Updated signature: The custom flow might not return a JWT token unless you generate one manually
   onLogin: (token: string, role: "admin" | "driver", id: string) => void;
   onShowTracking: () => void;
 }
@@ -25,78 +26,64 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        toast.error(`Login failed: ${error.message}`);
-        setLoading(false);
-        return;
-      }
-
-      const userResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/login/auth/me`,
+      // CHANGED: Call your Custom Edge Function instead of supabase.auth.signInWithPassword
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/login/auth/login`,
         {
-          headers: { Authorization: `Bearer ${data.session.access_token}` },
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
         }
       );
 
-      const userData = await userResponse.json();
+      const data = await response.json();
 
-      if (!userData.user) {
-        toast.error("User profile not found");
-        await supabase.auth.signOut();
-        setLoading(false);
-        return;
+      if (!response.ok) {
+        throw new Error(data.error || "Login failed");
       }
+
+      // data contains: { message, user, driver, employee } based on your Edge Function
+      const userRole = data.user.role;
+      const userId = data.user.id;
+      
+      // Note: Your custom login does not return a Supabase JWT Session Token.
+      // If your app relies on RLS, this will be an issue. 
+      // For now, we pass the user ID as a placeholder token or handle state management differently.
+      const fakeToken = "custom-auth-session"; 
 
       // CHECK ROLE VS TAB
-      if (activeTab === "admin" && userData.user.role !== "admin") {
+      if (activeTab === "admin" && userRole !== "admin") {
         toast.error("This account is not an admin account");
-        await supabase.auth.signOut();
         setLoading(false);
         return;
       }
 
-      if (activeTab === "driver" && userData.user.role !== "driver") {
+      if (activeTab === "driver" && userRole !== "driver") {
         toast.error("This account is not a driver account");
-        await supabase.auth.signOut();
         setLoading(false);
         return;
       }
 
-      // DRIVER SPECIFIC FETCH
-      if (userData.user.role === "driver") {
-        const driverResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/login/auth/me`,
-          {
-            headers: { Authorization: `Bearer ${data.session.access_token}` },
-          }
-        );
-
-        const driverData = await driverResponse.json();
-
-        if (!driverData.driver) {
-          toast.error("Driver profile not found");
-          await supabase.auth.signOut();
-          setLoading(false);
-          return;
-        }
-
-        toast.success("Login successful");
-        onLogin(data.session.access_token, "driver", driverData.driver.id);
+      // SUCCESS
+      toast.success(`Welcome back, ${data.employee.first_name}`);
+      
+      if (userRole === "driver" && data.driver) {
+        onLogin(fakeToken, "driver", data.driver.id);
       } else {
-        toast.success("Login successful");
-        onLogin(data.session.access_token, "admin", userData.user.id);
+        onLogin(fakeToken, "admin", userId);
       }
-    } catch (err) {
-      console.error("Login error:", err);
-      toast.error("Login failed");
-    }
 
-    setLoading(false);
+    } catch (err: any) {
+      console.error("Login error:", err);
+      toast.error(err.message || "Login failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -145,7 +132,6 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                       disabled={loading}
                     />
                   </div>
-
                   <div className="space-y-2">
                     <Label>Password</Label>
                     <Input
@@ -156,7 +142,6 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                       disabled={loading}
                     />
                   </div>
-
                   <Button className="w-full bg-[#27AE60] text-white" disabled={loading}>
                     {loading ? "Signing in..." : "Sign In as Admin"}
                   </Button>
@@ -176,7 +161,6 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                       disabled={loading}
                     />
                   </div>
-
                   <div className="space-y-2">
                     <Label>Password</Label>
                     <Input
@@ -187,11 +171,9 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                       disabled={loading}
                     />
                   </div>
-
                   <Button className="w-full bg-[#27AE60] text-white" disabled={loading}>
                     {loading ? "Signing in..." : "Sign In as Driver"}
                   </Button>
-
                 </form>
               </TabsContent>
             </Tabs>
