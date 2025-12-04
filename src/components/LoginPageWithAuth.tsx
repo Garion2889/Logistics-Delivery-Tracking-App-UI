@@ -3,14 +3,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
-// Note: We don't need supabase client for auth anymore if using custom edge function
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Truck, ArrowRight } from "lucide-react";
 import { projectId } from "../utils/supabase/info";
-import { toast } from "sonner"; // Removed version number for import
+import { toast } from "sonner";
 
 interface LoginPageWithAuthProps {
-  // Updated signature: The custom flow might not return a JWT token unless you generate one manually
   onLogin: (token: string, role: "admin" | "driver", id: string) => void;
   onShowTracking: () => void;
 }
@@ -26,7 +24,7 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
     setLoading(true);
 
     try {
-      // CHANGED: Call your Custom Edge Function instead of supabase.auth.signInWithPassword
+      // CUSTOM AUTH: Call your Edge Function directly
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/login/auth/login`,
         {
@@ -47,36 +45,27 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
         throw new Error(data.error || "Login failed");
       }
 
-      // data contains: { message, user, driver, employee } based on your Edge Function
-      const userRole = data.user.role;
-      const userId = data.user.id;
-      
-      // Note: Your custom login does not return a Supabase JWT Session Token.
-      // If your app relies on RLS, this will be an issue. 
-      // For now, we pass the user ID as a placeholder token or handle state management differently.
-      const fakeToken = "custom-auth-session"; 
-
-      // CHECK ROLE VS TAB
-      if (activeTab === "admin" && userRole !== "admin") {
+      // 1. Validate Roles against the Selected Tab
+      if (activeTab === "admin" && data.user.role !== "admin") {
         toast.error("This account is not an admin account");
         setLoading(false);
         return;
       }
 
-      if (activeTab === "driver" && userRole !== "driver") {
+      if (activeTab === "driver" && data.user.role !== "driver") {
         toast.error("This account is not a driver account");
         setLoading(false);
         return;
       }
 
-      // SUCCESS
+      // 2. Success Message
       toast.success(`Welcome back, ${data.employee.first_name}`);
-      
-      if (userRole === "driver" && data.driver) {
-        onLogin(fakeToken, "driver", data.driver.id);
-      } else {
-        onLogin(fakeToken, "admin", userId);
-      }
+
+      // 3. Complete Login
+      // Since Custom Auth doesn't return a session token, we use a placeholder or the ID.
+      // We pass the User ID (auth.users.id) to App.tsx to handle the rest.
+      const sessionToken = "custom-auth-token"; 
+      onLogin(sessionToken, data.user.role, data.user.id);
 
     } catch (err: any) {
       console.error("Login error:", err);
@@ -119,7 +108,7 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                 <TabsTrigger value="driver">Driver</TabsTrigger>
               </TabsList>
 
-              {/* ADMIN */}
+              {/* ADMIN FORM */}
               <TabsContent value="admin">
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
@@ -148,7 +137,7 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
                 </form>
               </TabsContent>
 
-              {/* DRIVER */}
+              {/* DRIVER FORM */}
               <TabsContent value="driver">
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
@@ -180,7 +169,7 @@ export function LoginPageWithAuth({ onLogin, onShowTracking }: LoginPageWithAuth
           </CardContent>
         </Card>
 
-        {/* Public Tracking */}
+        {/* Public Tracking Link */}
         <div className="text-center">
           <button
             onClick={onShowTracking}

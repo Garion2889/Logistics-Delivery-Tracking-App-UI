@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { supabase } from "../utils/supabase/client";
 
 interface GPSCoords {
@@ -12,46 +12,32 @@ interface GPSCoords {
 
 /**
  * Hook to upload GPS coordinates for the logged-in driver
+ * @param driverId The ID of the driver (passed from your Auth state)
  * @param fallbackCoords Optional coordinates to use if GPS fails
  */
-export function useGPSUploader(fallbackCoords?: GPSCoords) {
-  const [driverId, setDriverId] = useState<string>("");
+export function useGPSUploader(driverId: string | null, fallbackCoords?: GPSCoords) {
   const lastUpdateRef = useRef<number>(0); // timestamp of last GPS update
 
-  // Step 1: fetch driver UUID for logged-in user
+  // We removed the useEffect that calls supabase.auth.getUser() 
+  // because we are now passing driverId explicitly.
+
   useEffect(() => {
-    const fetchDriverId = async () => {
-      const { data: authUserData } = await supabase.auth.getUser();
-      const userId = authUserData?.user?.id;
-      if (!userId) return;
-
-      const { data: driver, error } = await supabase
-        .from("drivers")
-        .select("id")
-        .eq("user_id", userId)
-        .single();
-
-      if (error || !driver?.id) return;
-      setDriverId(driver.id);
-    };
-
-    fetchDriverId();
-  }, []);
-
-  // Step 2: start GPS tracking once driverId is available
-  useEffect(() => {
+    // 1. Don't start tracking until we have a valid Driver ID
     if (!driverId) return;
 
     let watchId: number | null = null;
 
     const sendLocation = async (coords: GPSCoords) => {
       const now = Date.now();
-      if (now - lastUpdateRef.current < 5000) return; // throttle: 5 seconds
+      if (now - lastUpdateRef.current < 1000) return; // throttle: 5 seconds
       lastUpdateRef.current = now;
 
       const { latitude, longitude, accuracy, speed, heading, altitude } = coords;
       if (!latitude || !longitude) return;
 
+      // Note: Since you are using custom auth, ensure your Postgres function 
+      // 'update_driver_location' allows access to the public/anon role 
+      // or validates the user differently, as auth.uid() will be null here.
       const { error } = await supabase.rpc("update_driver_location", {
         p_driver_id: driverId,
         p_lat: latitude,

@@ -16,6 +16,7 @@ import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
 import { AssignDriverModal } from "./components/AssignDriverModal";
+import { useGPSUploader } from "./drivermaptracker/gpsTracker"; // Make sure this path matches where you saved the hook
 
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
@@ -92,6 +93,11 @@ export default function App() {
     delivery: null as Delivery | null, });
   
 
+  // ---------- GPS Tracking Hook ----------
+  // This will automatically start tracking if the user is a driver and has an ID
+  // It effectively runs in the background while the driver is using the app
+  useGPSUploader(userRole === "driver" ? userId : null);
+
 
   // ---------- Load session from localStorage ----------
   useEffect(() => {
@@ -99,6 +105,7 @@ export default function App() {
     const storedId = localStorage.getItem("userId");
     const storedPage = localStorage.getItem("currentPage");
     const storedDarkMode = localStorage.getItem("isDarkMode");
+    const storedToken = localStorage.getItem("supabaseAccessToken");
 
     if (storedRole && storedId) {
       setUserRole(storedRole);
@@ -113,39 +120,29 @@ export default function App() {
   // ---------- Handlers ----------
 
   const handleLogin = async (token: string, role: "admin" | "driver", id: string) => {
-  // Get current session from Supabase first
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData?.session?.access_token;
+    // 1. Store the token (Even if it's a placeholder from Custom Auth)
+    localStorage.setItem("supabaseAccessToken", token);
+    localStorage.setItem("userId", id);
+    localStorage.setItem("userRole", role);
 
-  if (!accessToken) {
-    toast.error("Login failed: no active session token");
-    return;
-  }
+    // 2. Set State
+    setUserId(id);
+    setUserRole(role);
+    setCurrentView(role);
 
-  localStorage.setItem("supabaseAccessToken", accessToken);
+    // 3. Optional: Set supabase session if it's a real JWT (Standard Auth)
+    // If it's custom auth, this might fail or do nothing, which is fine.
+    if (token && token.length > 50) { // Simple check if it looks like a JWT
+        await supabase.auth.setSession({ access_token: token, refresh_token: "" });
+    }
 
-  // Determine actual role by checking if ID exists in drivers table
-  const { data: driverData } = await supabase
-    .from('drivers')
-    .select('id')
-    .eq('user_id', id)
-    .single();
-
-  const actualRole = driverData ? "driver" : "admin";
-
-  setUserId(id);
-  setUserRole(actualRole);
-  setCurrentView(actualRole);
-
-  // Persist session info with correct role
-  localStorage.setItem("userId", id);
-  localStorage.setItem("userRole", actualRole);
-
-  toast.success(`Welcome back! Logged in as ${actualRole}`);
-};
+    toast.success(`Welcome back! Logged in as ${role}`);
+  };
 
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    
     setCurrentView("login");
     setCurrentPage("dashboard");
     setSelectedDelivery(null);
@@ -158,6 +155,7 @@ export default function App() {
     localStorage.removeItem("userRole");
     localStorage.removeItem("currentPage");
     localStorage.removeItem("isDarkMode");
+    localStorage.removeItem("supabaseAccessToken");
 
     toast.info("Logged out successfully");
   };
@@ -414,7 +412,7 @@ const handleDeactivateDriver = async (driverId: string) => {
   email: d.email,
   vehicle: d.vehicle_type || "Unknown",   // modal requires `vehicle`
   status: d.status,
-  activeDeliveries: 0,                     // or compute real number later
+  activeDeliveries: 0,                   // or compute real number later
 });
 
   // Persist current page and dark mode whenever they change
