@@ -3,12 +3,12 @@ import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { DriverDeliveryDetail } from "./DriverDeliveryDetail";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-import { useGPSUploader } from "../drivermaptracker/gpsTracker"; // Ensure path is correct
+import { useGPSUploader } from "../drivermaptracker/gpsTracker"; 
 import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { toast } from "sonner";
@@ -46,8 +46,7 @@ interface DriverDelivery {
 }
 
 interface DriverDashboardProps {
-  // NEW PROPS: Pass identity directly
-  driverId: string;
+  driverId: string; // This expects public.drivers.id (UUID)
   driverName: string;
   onUpdateStatus: (deliveryId: string, status: DeliveryStatus) => void;
   onUploadPOD: (deliveryId: string) => void;
@@ -56,20 +55,9 @@ interface DriverDashboardProps {
   onToggleDarkMode: () => void;
 }
 
-// Helper to pan map to driver's location
-function PanToDriver({ location }: { location: [number, number] | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (location) {
-      map.flyTo(location, 15, { animate: true, duration: 1.5 });
-    }
-  }, [location, map]);
-  return null;
-}
-
 export function DriverDashboard({
-  driverId,   // <--- Received from parent
-  driverName, // <--- Received from parent
+  driverId,
+  driverName,
   onUpdateStatus: onUpdateStatusProp,
   onUploadPOD,
   onLogout,
@@ -103,17 +91,22 @@ export function DriverDashboard({
     if (status === "in-transit") return "in_transit";
     return status;
   };
-
-  // REMOVED: The useEffect that called supabase.auth.getUser()
-  // We now rely on the `driverId` prop passed from App.tsx
-
+function PanToDriver({ location }: { location: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (location) {
+      map.flyTo(location, 15, { animate: true, duration: 1.5 });
+    }
+  }, [location, map]);
+  return null;
+}
   // Fetch driver-specific deliveries
   const fetchDriverDeliveries = async (internalDriverId: string) => {
     try {
       const { data, error } = await supabase
         .from("deliveries")
         .select("*")
-        .eq("assigned_driver", internalDriverId)
+        .eq("assigned_driver", internalDriverId) // Assumes assigned_driver FK points to drivers.id
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -124,7 +117,7 @@ export function DriverDashboard({
         customer: d.customer_name,
         address: d.address,
         status: mapStatus(d.status),
-        driver_id: d.assigned_driver, // Map correctly
+        driver_id: d.assigned_driver,
         paymentType: d.payment_type,
         amount: d.total_amount,
         latitude: d.latitude,
@@ -140,10 +133,7 @@ export function DriverDashboard({
 
   const updateStatusInDb = async (deliveryId: string, nextStatus: DeliveryStatus) => {
     try {
-      // Use Prop
-      if (!driverId) {
-        throw new Error("Driver ID missing.");
-      }
+      if (!driverId) throw new Error("Driver ID missing.");
 
       const payload = {
         p_delivery_id: deliveryId,
@@ -167,7 +157,7 @@ export function DriverDashboard({
     }
   };
 
-  // ✅ Subscribe to driver deliveries updates (Using Prop)
+  // Subscribe to delivery updates
   useEffect(() => {
     if (!driverId) return;
 
@@ -192,11 +182,10 @@ export function DriverDashboard({
     };
   }, [driverId]);
 
-  // Start GPS uploader (Using Prop)
-  // Ensure your hook accepts the ID as an argument now
+  // Start GPS uploader
   useGPSUploader(driverId);
 
-  // Subscribe to driver location updates (Using Prop)
+  // ✅ UPDATED: Fetch & Subscribe to Driver Location using 'id' (PK)
   useEffect(() => {
     if (!driverId) return;
 
@@ -204,7 +193,7 @@ export function DriverDashboard({
       const { data, error } = await supabase
         .from("drivers")
         .select("last_lat, last_lng")
-        .eq("user_id", driverId)
+        .eq("id", driverId) // ✅ Corrected: Query by PK 'id', not 'user_id'
         .single();
 
       if (!error && data?.last_lat && data?.last_lng) {
@@ -222,7 +211,7 @@ export function DriverDashboard({
           event: "UPDATE",
           schema: "public",
           table: "drivers",
-          filter: `users_id=eq.${driverId}`,
+          filter: `id=eq.${driverId}`, // ✅ Corrected: Filter by PK 'id'
         },
         (payload) => {
           const { last_lat, last_lng } = payload.new as any;
@@ -411,14 +400,14 @@ export function DriverDashboard({
                       role="driver"
                     />
 
-                    {/* 1. Driver Marker */}
+                    {/* Driver Marker */}
                     {driverLocation && (
                       <Marker position={driverLocation} icon={defaultIcon}>
                         <Popup>Your current location</Popup>
                       </Marker>
                     )}
 
-                    {/* 2. Destination Marker */}
+                    {/* Destination Marker */}
                     {activeDestination && (
                       <Marker
                         position={[activeDestination.lat, activeDestination.lng]}
@@ -432,7 +421,7 @@ export function DriverDashboard({
                       </Marker>
                     )}
 
-                    {/* 3. Route Line */}
+                    {/* Route Line */}
                     {routePath.length > 0 && (
                       <Polyline
                         positions={routePath}
