@@ -5,17 +5,15 @@ import {
   Package,
   User,
   MapPin,
-  CreditCard,
-  Calendar,
   Truck,
   CheckCircle2,
   Clock,
-  X,
   ArrowLeft,
   Image as ImageIcon,
 } from "lucide-react";
 import { Separator } from "./ui/separator";
 
+// 1. Updated Interface to include the missing date fields
 interface Delivery {
   id: string;
   refNo: string;
@@ -25,6 +23,9 @@ interface Delivery {
   status: "pending" | "assigned" | "in-transit" | "delivered" | "returned";
   driver?: string;
   createdAt: string;
+  assignedAt?: string;    // New field
+  inTransitAt?: string;   // New field
+  deliveredAt?: string;   // New field
   phone?: string;
   amount?: number;
 }
@@ -35,20 +36,37 @@ interface DeliveryDetailProps {
 }
 
 export function DeliveryDetail({ delivery, onClose }: DeliveryDetailProps) {
+
+  // 2. Helper function to format dates nicely
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return undefined;
+    return new Date(dateString).toLocaleString('en-US', {
+      timeZone: 'Asia/Manila', // Force PH Time
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true
+    });
+  };
+
   const timelineSteps = [
     {
       status: "pending",
       label: "Order Created",
       icon: Package,
       completed: true,
-      date: delivery.createdAt,
+      date: formatDate(delivery.createdAt),
     },
     {
       status: "assigned",
       label: "Driver Assigned",
       icon: User,
-      completed: delivery.status !== "pending",
-      date: delivery.status !== "pending" ? "Nov 12, 2025 10:30 AM" : undefined,
+      // Logic: It's done if status is NOT pending
+      completed: delivery.status !== "pending", 
+      // Logic: Show date only if we have it
+      date: delivery.status !== "pending" ? formatDate(delivery.assignedAt) : undefined,
     },
     {
       status: "in-transit",
@@ -56,8 +74,8 @@ export function DeliveryDetail({ delivery, onClose }: DeliveryDetailProps) {
       icon: Truck,
       completed: delivery.status === "in-transit" || delivery.status === "delivered",
       date:
-        delivery.status === "in-transit" || delivery.status === "delivered"
-          ? "Nov 12, 2025 11:15 AM"
+        (delivery.status === "in-transit" || delivery.status === "delivered")
+          ? formatDate(delivery.inTransitAt)
           : undefined,
     },
     {
@@ -65,20 +83,9 @@ export function DeliveryDetail({ delivery, onClose }: DeliveryDetailProps) {
       label: "Delivered",
       icon: CheckCircle2,
       completed: delivery.status === "delivered",
-      date: delivery.status === "delivered" ? "Nov 12, 2025 2:45 PM" : undefined,
+      date: delivery.status === "delivered" ? formatDate(delivery.deliveredAt) : undefined,
     },
   ];
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: "text-orange-600",
-      assigned: "text-blue-600",
-      "in-transit": "text-purple-600",
-      delivered: "text-green-600",
-      returned: "text-red-600",
-    };
-    return colors[status] || "text-gray-600";
-  };
 
   return (
     <div className="space-y-6">
@@ -141,9 +148,7 @@ export function DeliveryDetail({ delivery, onClose }: DeliveryDetailProps) {
                   </p>
                 </div>
               </div>
-              <Separator />
-              <div className="flex items-start gap-3">
-              </div>
+              
               {delivery.driver && (
                 <>
                   <Separator />
