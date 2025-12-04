@@ -60,16 +60,16 @@ interface Driver {
 }
 
 interface OptimizedRoute {
-  id: string;
-  name: string;
-  driverId?: string; // Changed from 'driver' to 'driverId' to store the driver's ID
-  driverName?: string; // New field to store driver's name for display
+  id: string; // This will be the driver's ID
+  name: string; // e.g. "John Doe's Route"
+  driverId: string;
+  driverName: string;
   stops: number;
-  distance: number;
-  estimatedTime: string;
-  status: "planned" | "assigned" | "active" | "completed";
-  priority: "high" | "medium" | "low";
-  polyline?: [number, number][]; // Added polyline field
+  distance: number; // in km
+  estimatedTime: string; // formatted string
+  status: "active" | "planned" | "completed";
+  deliveries: Delivery[]; // All deliveries in this route
+  polyline: [number, number][]; // The full, ordered polyline for the tour
 }
 
 interface ScheduledDelivery {
@@ -143,7 +143,7 @@ export function RouteOptimizationPage() {
   const [selectedRoute, setSelectedRoute] = useState<OptimizedRoute | null>(null);
   
   // ✅ NEW: State for OSRM Route Shape
-  const [routePath, setRoutePath] = useState<[number, number][]>([]);
+
 
   // ✅ NEW: track active tab so we fetch schedules only when schedule is opened
   const [activeTab, setActiveTab] = useState("availability");
@@ -236,80 +236,103 @@ export function RouteOptimizationPage() {
   // ------------------ 4. Fetch Active Routes (Populates list in "Optimized Routes" tab) ------------------
   const fetchAssignedRoutes = async () => {
     try {
-      // Query deliveries that have an assigned driver and are active
-      const { data: assignedData, error } = await supabase
+      const { data: assignedDeliveries, error } = await supabase
         .from("deliveries")
         .select("*")
-        .in('status', ['assigned', 'picked_up', 'in_transit']) 
-        .not('assigned_driver', 'is', null) 
+        .in('status', ['assigned', 'picked_up', 'in_transit'])
+        .not('assigned_driver', 'is', null)
         .order("assigned_at", { ascending: false });
 
       if (error) throw error;
-
-      if (!assignedData || assignedData.length === 0) {
+      if (!assignedDeliveries || assignedDeliveries.length === 0) {
         setOptimizedRoutes([]);
         return;
       }
+      
+      // Group deliveries by driver
+      const routesByDriver = assignedDeliveries.reduce((acc, delivery) => {
+        const driverId = delivery.assigned_driver;
+        if (!driverId) return acc;
+        if (!acc[driverId]) {
+          acc[driverId] = [];
+        }
+        acc[driverId].push(delivery);
+        return acc;
+      }, {} as Record<string, Delivery[]>);
 
-      // Format for UI
-      const formattedRoutes: OptimizedRoute[] = assignedData.map((d) => {
-        const assignedDriver = drivers.find((dr) => dr.id === d.assigned_driver);
-        return {
-          id: d.id,
-          name: d.ref_no || `Delivery ${d.id.slice(0, 4)}`,
-          driverId: d.assigned_driver!,
-          driverName: assignedDriver?.name || "Loading...",
-          stops: 1,
-          distance: 0, // Placeholder
-          estimatedTime: "Calculating...",
-          status: d.status as "assigned" | "active" | "planned" | "completed",
-          priority: (d.priority as "high" | "medium" | "low") || "normal",
-          polyline: [],
-        };
-      });
+      const newOptimizedRoutes: OptimizedRoute[] = [];
 
-      setOptimizedRoutes(formattedRoutes);
+      // Create a route for each driver
+      for (const driverId in routesByDriver) {
+        const driverDeliveries = routesByDriver[driverId];
+        const driver = drivers.find((d) => d.id === driverId);
+
+        if (!driver || !driver.location) continue; // Skip if driver has no location
+
+        // Create list of coordinates for OSRM (driver's location is first)
+        const coords = [
+          [driver.location.lng, driver.location.lat],
+          ...driverDeliveries
+            .filter(d => d.longitude && d.latitude)
+            .map(d => [d.longitude!, d.latitude!])
+        ];
+        
+        if (coords.length < 2) continue; // Not enough points to make a route
+
+        // Call OSRM trip API for optimization
+        const url = `https://router.project-osrm.org/trip/v1/driving/${coords.join(';')}?source=first&roundtrip=false&overview=full&geometries=geojson`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data.code === 'Ok' && data.trips && data.trips.length > 0) {
+                const trip = data.trips[0];
+                const newRoute: OptimizedRoute = {
+                    id: driverId,
+                    driverId: driverId,
+                    driverName: driver.name,
+                    name: `${driver.name}'s Route`,
+                    stops: driverDeliveries.length,
+                    distance: trip.distance / 1000, // meters to km
+                    estimatedTime: `${Math.round(trip.duration / 60)} min`,
+                    status: 'active', // or derive from driver status
+                    deliveries: driverDeliveries,
+                    polyline: trip.geometry.coordinates.map((c: number[]) => [c[1], c[0]]), // lng,lat -> lat,lng
+                };
+                newOptimizedRoutes.push(newRoute);
+            } else {
+                // OSRM call failed or returned no trips.
+                console.warn(`OSRM trip optimization failed for driver ${driverId}: ${data.message}`);
+                
+                // Create a "degraded" route object so it still appears in the list
+                const degradedRoute: OptimizedRoute = {
+                    id: driverId,
+                    driverId: driverId,
+                    driverName: driver.name,
+                    name: `${driver.name}'s Route (Unoptimized)`,
+                    stops: driverDeliveries.length,
+                    distance: 0,
+                    estimatedTime: 'N/A',
+                    status: 'active',
+                    deliveries: driverDeliveries,
+                    polyline: [], // No polyline
+                };
+                newOptimizedRoutes.push(degradedRoute);
+            }
+        } catch (e) {
+            console.error("OSRM API fetch failed for driver", driverId, e);
+        }
+      }
+
+      setOptimizedRoutes(newOptimizedRoutes);
+
     } catch (err) {
       console.error("Error fetching assigned routes:", err);
     }
   };
 
-  // ------------------ 5. OSRM Route Shape Fetcher (Draws curved lines) ------------------
-  useEffect(() => {
-    if (!selectedRoute) {
-      setRoutePath([]);
-      return;
-    }
 
-    const fetchRouteShape = async () => {
-      const activeDelivery = deliveries.find((d) => d.id === selectedRoute.id);
-      const activeDriver = drivers.find((d) => d.id === selectedRoute.driverId || d.name === selectedRoute.driverName);
-
-      if (!activeDelivery?.latitude || !activeDelivery?.longitude || !activeDriver?.location) {
-        setRoutePath([]);
-        return;
-      }
-
-      // OSRM Public API
-      const url = `https://router.project-osrm.org/route/v1/driving/${activeDriver.location.lng},${activeDriver.location.lat};${activeDelivery.longitude},${activeDelivery.latitude}?overview=full&geometries=geojson`;
-
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.routes && data.routes.length > 0) {
-          // Swap [lng, lat] to [lat, lng] for Leaflet
-          const coordinates = data.routes[0].geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
-          setRoutePath(coordinates);
-        }
-      } catch (err) {
-        console.error("Failed to fetch route shape:", err);
-        // Fallback to straight line
-        setRoutePath([[activeDriver.location.lat, activeDriver.location.lng], [activeDelivery.latitude, activeDelivery.longitude]]);
-      }
-    };
-
-    fetchRouteShape();
-  }, [selectedRoute, deliveries, drivers]);
 
   // ------------------ Auto Assign Handler ------------------
   const handleAutoAssign = async () => {
@@ -321,7 +344,7 @@ export function RouteOptimizationPage() {
 
       if (!ok) {
         toast.dismiss();
-        toast.error(data.error || "Auto-assign failed");
+        toast.error(data?.error || "Auto-assign failed");
         return;
       }
 
@@ -392,7 +415,7 @@ export function RouteOptimizationPage() {
       const { data, error } = await supabase
         .from("drivers")
         .select(
-          "user_id, name, vehicle_type, status, last_lat, last_lng, last_location_update"
+          "id, user_id, name, vehicle_type, status, last_lat, last_lng, last_location_update"
         );
 
       if (error) {
@@ -402,7 +425,7 @@ export function RouteOptimizationPage() {
 
       const formatted: Driver[] =
         data?.map((d: any) => ({
-          id: d.user_id,
+          id: d.id, // ✅ Use the primary key 'id'
           name: d.name || "Unnamed",
           vehicle: d.vehicle_type || "",
           status: d.status as Driver["status"],
@@ -430,7 +453,7 @@ export function RouteOptimizationPage() {
           const u = payload.new as any;
           setDrivers((prev) =>
             prev.map((d) =>
-              d.id === u.user_id
+              d.id === u.id // ✅ Use the primary key 'id' for comparison
                 ? {
                     ...d,
                     status: u.status,
@@ -786,18 +809,13 @@ const formatStatus = (status: string) => {
                               {route.name}
                             </h4>
                             <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                              {route.driverName || "Unassigned"}
+                              {route.driverName}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={getRouteStatusColor(route.status)}>
-                            {formatStatus(route.status)}
-                          </Badge>
-                          <AlertCircle
-                            className={`w-4 h-4 ${getPriorityColor(route.priority)}`}
-                          />
-                        </div>
+                        <Badge className={getRouteStatusColor(route.status)}>
+                          {formatStatus(route.status)}
+                        </Badge>
                       </div>
 
                       <div className="grid grid-cols-3 gap-4 text-sm">
@@ -847,40 +865,30 @@ const formatStatus = (status: string) => {
                   {selectedRoute ? (
                     <div className="space-y-4">
                       {/* MAP CONTAINER */}
-                      <div className="h-64 rounded-lg overflow-hidden relative z-0 border border-gray-200">
+                      <div className="h-96 rounded-lg overflow-hidden relative z-0 border border-gray-200">
                         {(() => {
-                          // --- DATA LOOKUP LOGIC ---
-                          const activeDelivery = deliveries.find((d) => d.id === selectedRoute.id);
-                          const activeDriver = drivers.find((d) => d.id === selectedRoute.driverId || d.name === selectedRoute.driverName);
+                          const driver = drivers.find(d => d.id === selectedRoute.driverId);
+                          const driverLoc = driver?.location;
+                          const deliveryLocs = selectedRoute.deliveries
+                            .map(d => (d.latitude && d.longitude ? { lat: d.latitude, lng: d.longitude } : null))
+                            .filter(Boolean) as { lat: number, lng: number }[];
 
-                          const driverLoc = activeDriver?.location;
-                          const deliveryLoc = activeDelivery?.latitude && activeDelivery?.longitude 
-                            ? { lat: activeDelivery.latitude, lng: activeDelivery.longitude } 
-                            : null;
-
-                          if (!driverLoc && !deliveryLoc) {
-                            return (
+                          if (!driverLoc && deliveryLocs.length === 0) {
+                             return (
                               <div className="h-full flex flex-col items-center justify-center bg-gray-100 text-gray-500 text-sm p-4 text-center">
                                 <AlertCircle className="w-8 h-8 mb-2 text-yellow-500" />
-                                <p>Missing location data.</p>
-                                <p className="text-xs mt-1">Check if Driver is Online or Delivery has been Geocoded.</p>
+                                <p>Missing location data for this route.</p>
                               </div>
                             );
                           }
+                          
+                          const allPoints = [
+                            ...(driverLoc ? [[driverLoc.lat, driverLoc.lng]] : []),
+                            ...deliveryLocs.map(loc => [loc.lat, loc.lng])
+                          ] as [number, number][];
 
-                          let bounds: L.LatLngBoundsExpression | null = null;
-                          let center: [number, number] = [14.5995, 120.9842]; // Default Manila
-
-                          if (driverLoc && deliveryLoc) {
-                            bounds = [
-                              [driverLoc.lat, driverLoc.lng],
-                              [deliveryLoc.lat, deliveryLoc.lng]
-                            ];
-                          } else if (driverLoc) {
-                            center = [driverLoc.lat, driverLoc.lng];
-                          } else if (deliveryLoc) {
-                            center = [deliveryLoc.lat, deliveryLoc.lng];
-                          }
+                          const bounds = allPoints.length > 0 ? L.latLngBounds(allPoints) : null;
+                          const center = bounds ? bounds.getCenter() : [14.5995, 120.9842]; // Default Manila
 
                           return (
                             <MapContainer
@@ -896,47 +904,51 @@ const formatStatus = (status: string) => {
                               />
 
                               <MapController bounds={bounds} />
-
-
-                              {deliveryLoc && (
+                              
+                              {/* Driver Marker */}
+                              {driverLoc && (
                                 <Marker
-                                  position={[deliveryLoc.lat, deliveryLoc.lng]}
+                                  position={[driverLoc.lat, driverLoc.lng]}
                                   icon={L.divIcon({
-                                    className: "bg-red-600 rounded-full w-8 h-8 flex items-center justify-center text-white border-2 border-white shadow-lg",
-                                    html: `<span class="text-xs font-bold">Dest</span>`,
+                                    className: "bg-blue-600 rounded-full w-8 h-8 flex items-center justify-center text-white border-2 border-white shadow-lg",
+                                    html: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-truck"><path d="M5 18H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h10l4 4"/><path d="M5 18H3c-1.1 0-2-.9-2-2V7c0-1.1.9-2 2-2h10l4 4v11h-3.3"/><path d="M7 18h10M5 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>`,
                                     iconSize: [32, 32]
                                   })}
                                 >
-                                  <Popup>
-                                    <div className="text-sm">
-                                      <strong>Delivery</strong><br/>
-                                      {activeDelivery?.address}
-                                    </div>
-                                  </Popup>
+                                  <Popup>Driver: {driver.name}</Popup>
                                 </Marker>
                               )}
 
-                              {/* OSRM Route Shape OR Straight Line Fallback */}
-                              {routePath.length > 0 ? (
-                                <Polyline 
-                                  positions={routePath} 
-                                  color="#3B82F6" 
-                                  weight={4} 
-                                  opacity={0.8} 
-                                />
-                              ) : (
-                                driverLoc && deliveryLoc && (
-                                  <Polyline
-                                    positions={[
-                                      [driverLoc.lat, driverLoc.lng],
-                                      [deliveryLoc.lat, deliveryLoc.lng]
-                                    ]}
-                                    color="#3B82F6"
-                                    weight={4}
-                                    dashArray="10, 10"
-                                    opacity={0.5}
-                                  />
+                              {/* Delivery Markers */}
+                              {selectedRoute.deliveries.map((delivery, index) => 
+                                delivery.latitude && delivery.longitude && (
+                                  <Marker
+                                    key={delivery.id}
+                                    position={[delivery.latitude, delivery.longitude]}
+                                    icon={L.divIcon({
+                                      className: "bg-gray-700 rounded-full w-6 h-6 flex items-center justify-center text-white border-2 border-white shadow-md",
+                                      html: `<span class="text-xs font-bold">${index + 1}</span>`,
+                                      iconSize: [24, 24]
+                                    })}
+                                  >
+                                    <Popup>
+                                      <div className="text-sm">
+                                        <strong>Stop {index + 1}: {delivery.customer_name}</strong><br/>
+                                        {delivery.address}
+                                      </div>
+                                    </Popup>
+                                  </Marker>
                                 )
+                              )}
+
+                              {/* OSRM Route Shape */}
+                              {selectedRoute.polyline && selectedRoute.polyline.length > 0 && (
+                                <Polyline 
+                                  positions={selectedRoute.polyline}
+                                  color="#3B82F6" 
+                                  weight={5} 
+                                  opacity={0.7} 
+                                />
                               )}
                             </MapContainer>
                           );
@@ -946,10 +958,10 @@ const formatStatus = (status: string) => {
                       {/* Route Info Details */}
                       <div className="space-y-3 pt-2">
                         <div className="grid grid-cols-2 gap-4">
-                          <div>
+                           <div>
                             <Label className="text-xs text-gray-500">Driver</Label>
                             <p className="font-medium text-sm">
-                              {selectedRoute.driverName || "Unassigned"}
+                              {selectedRoute.driverName}
                             </p>
                           </div>
                           <div>
@@ -960,20 +972,17 @@ const formatStatus = (status: string) => {
                           </div>
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-500">Delivery Address</Label>
-                          {(() => {
-                             const d = deliveries.find(del => del.id === selectedRoute.id);
-                             return (
-                               <p className="text-sm truncate" title={d?.address}>
-                                 {d?.address || "Loading address..."}
-                               </p>
-                             );
-                          })()}
+                          <Label className="text-xs text-gray-500">Stops ({selectedRoute.stops})</Label>
+                           <div className="text-sm truncate max-h-20 overflow-y-auto">
+                             {selectedRoute.deliveries.map((d, i) => (
+                               <p key={d.id} className="truncate"><b>{i + 1}:</b> {d.address}</p>
+                             ))}
+                           </div>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="h-64 flex flex-col items-center justify-center text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                    <div className="h-96 flex flex-col items-center justify-center text-center bg-gray-50 rounded-lg border border-dashed border-gray-300">
                       <Map className="w-10 h-10 text-gray-300 mb-2" />
                       <p className="text-sm text-gray-500">
                         Select a route from the list to view the map.

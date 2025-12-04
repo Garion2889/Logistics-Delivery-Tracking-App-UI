@@ -52,7 +52,7 @@ export interface Driver {
   name: string;
   email: string;
   phone: string;
-  status: "online" | "offline";
+  status: "online" | "offline" | "deactivated";
   vehicle_type: "Motorcycle" | "Car" | "Van" | "Truck";
   plate_number?: string;
   license_number?: string;
@@ -503,7 +503,7 @@ const handleDeactivateDriver = async (driverId: string) => {
         customer: d.customer_name,
         address: d.address,
         status: mapStatus(d.status),
-        driver: d.driver_info?.id,
+        driver: d.driver_info?.user_info?.full_name,
         createdAt: new Date(d.created_at).toLocaleString(),
         updatedAt: new Date(d.updated_at).toLocaleString(),
         phone: d.customer_phone,
@@ -540,8 +540,6 @@ const handleDeactivateDriver = async (driverId: string) => {
     activeDeliveries: deliveries.filter(d => d.status === "in-transit").length,
     completedDeliveries: deliveries.filter(d => d.status === "delivered").length,
     returns: deliveries.filter(d => d.status === "returned").length,
-    revenueChange: 12.5,
-    successRate: 94,
   };
 
   const driverStats = {
@@ -571,14 +569,13 @@ const handleDeactivateDriver = async (driverId: string) => {
     case "driver":
       return (
         <DriverDashboard
-          deliveries={driverDeliveries}
+          driverId={userId}
+          driverName={drivers.find(d => d.id === userId)?.name || "Driver"}
           onUpdateStatus={handleUpdateDeliveryStatus}
           onUploadPOD={handleUploadPOD}
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
           onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-          driverName={drivers.find(d => d.id === userId)?.name || "Driver"}
-          stats={driverStats}
         />
       );
 

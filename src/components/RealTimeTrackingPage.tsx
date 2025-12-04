@@ -336,31 +336,79 @@ export function RealTimeTrackingPage() {
     return () => clearInterval(interval);
   }, [selectedDriver, filterStartDate, filterEndDate, isPlaying]);
 
-  // =================================================================
-  // ✅ 3. NEW: BATCH GEOCODING (Fix missing coords)
+// =================================================================
+  // ✅ 5. IMPROVED ROUTING LOGIC (Handles "NoRoute" Error)
   // =================================================================
   useEffect(() => {
-    const runBatchGeocode = async () => {
-      const { data } = await supabase.from("deliveries").select("*").is('latitude', null);
-      if (data && data.length > 0) {
-        for (const d of data) {
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(d.address)}&limit=1`);
-            const geo = await res.json();
-            if (geo[0]) {
-              await supabase.from("deliveries").update({ 
-                latitude: parseFloat(geo[0].lat), 
-                longitude: parseFloat(geo[0].lon) 
-              }).eq("id", d.id);
-            }
-          } catch(e) { console.error("Batch geocode failed for:", d.id); }
-          
-          await new Promise((r) => setTimeout(r, 1200)); 
-        }
+    if (!selectedDriver) {
+      setRoutePath([]);
+      setActiveDestination(null);
+      return;
+    }
+
+    const calculateRoute = async () => {
+      // A. Find what this driver is currently working on
+      const { data: activeJob } = await supabase
+        .from('deliveries')
+        .select('id, latitude, longitude, address')
+        .eq('assigned_driver', selectedDriver.driver_id) // or .id depending on your interface
+        .in('status', ['in_transit', 'picked_up'])
+        .limit(1)
+        .single();
+
+      if (!activeJob) {
+        setRoutePath([]);
+        setActiveDestination(null);
+        return;
+      }
+
+      // B. Quick geocode if missing
+      let destLat = activeJob.latitude;
+      let destLng = activeJob.longitude;
+
+      if (!destLat || !destLng) {
+         try {
+           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(activeJob.address)}&limit=1`);
+           const geo = await res.json();
+           if (geo[0]) {
+             destLat = parseFloat(geo[0].lat);
+             destLng = parseFloat(geo[0].lon);
+           }
+         } catch (e) { return; }
+      }
+
+      if (destLat && destLng) {
+         setActiveDestination({ lat: destLat, lng: destLng, address: activeJob.address });
+         
+         try {
+           const startLng = selectedDriver.longitude; // Ensure this is valid
+           const startLat = selectedDriver.latitude;  // Ensure this is valid
+
+           // OSRM URL
+           const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+           
+           const res = await fetch(url);
+           const json = await res.json();
+
+           // ✅ FIX: Check for "Ok" code. If not "Ok" (e.g., "NoRoute"), fall back to straight line.
+           if (json.code === 'Ok' && json.routes && json.routes[0]) {
+             const path = json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+             setRoutePath(path);
+           } else {
+             console.warn("OSRM could not find road route:", json.message);
+             // Fallback: Draw straight line
+             setRoutePath([[startLat, startLng], [destLat, destLng]]);
+           }
+         } catch (e) { 
+           console.error("Routing error:", e);
+           // Fallback on crash
+           setRoutePath([[selectedDriver.latitude, selectedDriver.longitude], [destLat, destLng]]);
+         }
       }
     };
-    runBatchGeocode();
-  }, []);
+
+    calculateRoute();
+  }, [selectedDriver]);
 
   // =================================================================
   // ✅ 4. NEW: ROUTING LOGIC (OSRM + Active Delivery)
