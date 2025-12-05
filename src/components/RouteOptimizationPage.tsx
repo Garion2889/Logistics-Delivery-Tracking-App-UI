@@ -12,19 +12,14 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import {
-  Calendar as CalendarIcon,
-  Navigation,
   Users,
   TrendingUp,
-  Clock,
-  Route,
-  Zap,
-  CheckCircle2,
-  Activity,
   Truck,
-  Package,
   Map,
   AlertCircle,
+  Route,
+  CheckCircle2,
+  Navigation,
 } from "lucide-react";
 import {
   Select,
@@ -276,11 +271,12 @@ export function RouteOptimizationPage() {
             .filter(d => d.longitude && d.latitude)
             .map(d => [d.longitude!, d.latitude!])
         ];
-        
+
         if (coords.length < 2) continue; // Not enough points to make a route
 
-        // Call OSRM trip API for optimization
-        const url = `https://router.project-osrm.org/trip/v1/driving/${coords.join(';')}?source=first&roundtrip=false&overview=full&geometries=geojson`;
+        // Call OSRM trip API for optimization - format as lng,lat;lng,lat
+        const coordsString = coords.map(coord => `${coord[0]},${coord[1]}`).join(';');
+        const url = `https://router.project-osrm.org/trip/v1/driving/${coordsString}?source=first&roundtrip=false&overview=full&geometries=geojson`;
 
         try {
             const res = await fetch(url);
@@ -296,7 +292,7 @@ export function RouteOptimizationPage() {
                     stops: driverDeliveries.length,
                     distance: trip.distance / 1000, // meters to km
                     estimatedTime: `${Math.round(trip.duration / 60)} min`,
-                    status: 'active', // or derive from driver status
+                    status: 'active' as OptimizedRoute["status"], // or derive from driver status
                     deliveries: driverDeliveries,
                     polyline: trip.geometry.coordinates.map((c: number[]) => [c[1], c[0]]), // lng,lat -> lat,lng
                 };
@@ -564,18 +560,7 @@ const formatStatus = (status: string) => {
     }
   };
 
-  const getPriorityColor = (priority: OptimizedRoute["priority"]) => {
-    switch (priority) {
-      case "high":
-        return "text-red-600";
-      case "medium":
-        return "text-orange-600";
-      case "low":
-        return "text-blue-600";
-      default:
-        return "text-gray-600";
-    }
-  };
+
 
   // ------------------ Render ------------------
 

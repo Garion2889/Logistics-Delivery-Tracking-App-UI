@@ -46,6 +46,17 @@ interface DriverDelivery {
   longitude?: number | null;
 }
 
+interface DriverRoute {
+  id: string;
+  name: string;
+  stops: number;
+  distance: number;
+  estimatedTime: string;
+  status: "active" | "planned" | "completed";
+  deliveries: DriverDelivery[];
+  polyline: [number, number][];
+}
+
 interface DriverDashboardProps {
   driverId: string;
   driverName: string;
@@ -81,10 +92,12 @@ export function DriverDashboard({
   const [deliveries, setDeliveries] = useState<DriverDelivery[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
-  
+
   // Routing State
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
+  const [driverRoutes, setDriverRoutes] = useState<DriverRoute[]>([]);
+  const [selectedRoute, setSelectedRoute] = useState<DriverRoute | null>(null);
 
   const mapRef = useRef<L.Map | null>(null);
 
@@ -219,7 +232,90 @@ export function DriverDashboard({
     return () => { supabase.removeChannel(channel); };
   }, [driverId]);
 
-  // --- 5. Routing & Geocoding Logic ---
+  // --- 5. Create Routes from Deliveries ---
+  const createDriverRoutes = useCallback(async () => {
+    if (!driverId || !driverLocation || deliveries.length === 0) {
+      setDriverRoutes([]);
+      return;
+    }
+
+    try {
+      // Group deliveries by status for different route types
+      const activeDeliveries = deliveries.filter(d => ['assigned', 'picked_up', 'in-transit'].includes(d.status));
+      const completedDeliveries = deliveries.filter(d => d.status === 'delivered');
+      const returnedDeliveries = deliveries.filter(d => d.status === 'returned');
+
+      const routes: DriverRoute[] = [];
+
+      // Create active route
+      if (activeDeliveries.length > 0) {
+        const coords = [
+          [driverLocation[1], driverLocation[0]], // driver location (lng, lat)
+          ...activeDeliveries
+            .filter(d => d.longitude && d.latitude)
+            .map(d => [d.longitude!, d.latitude!])
+        ];
+
+        if (coords.length > 1) {
+          try {
+            const url = `https://router.project-osrm.org/trip/v1/driving/${coords.join(';')}?source=first&roundtrip=false&overview=full&geometries=geojson`;
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data.code === 'Ok' && data.trips && data.trips.length > 0) {
+              const trip = data.trips[0];
+              routes.push({
+                id: 'active-route',
+                name: 'Active Deliveries Route',
+                stops: activeDeliveries.length,
+                distance: trip.distance / 1000, // meters to km
+                estimatedTime: `${Math.round(trip.duration / 60)} min`,
+                status: 'active',
+                deliveries: activeDeliveries,
+                polyline: trip.geometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number])
+              });
+            }
+          } catch (e) {
+            console.error("Error creating active route:", e);
+          }
+        }
+      }
+
+      // Create completed route
+      if (completedDeliveries.length > 0) {
+        routes.push({
+          id: 'completed-route',
+          name: 'Completed Deliveries',
+          stops: completedDeliveries.length,
+          distance: 0,
+          estimatedTime: 'Completed',
+          status: 'completed',
+          deliveries: completedDeliveries,
+          polyline: []
+        });
+      }
+
+      // Create returned route
+      if (returnedDeliveries.length > 0) {
+        routes.push({
+          id: 'returned-route',
+          name: 'Returned Deliveries',
+          stops: returnedDeliveries.length,
+          distance: 0,
+          estimatedTime: 'Returned',
+          status: 'completed',
+          deliveries: returnedDeliveries,
+          polyline: []
+        });
+      }
+
+      setDriverRoutes(routes);
+    } catch (err) {
+      console.error("Error creating driver routes:", err);
+    }
+  }, [driverId, driverLocation, deliveries]);
+
+  // --- 6. Routing & Geocoding Logic ---
   useEffect(() => {
     if (!driverId || !driverLocation || deliveries.length === 0) {
       setRoutePath([]);
@@ -267,7 +363,7 @@ export function DriverDashboard({
           const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation[1]},${driverLocation[0]};${lng},${lat}?overview=full&geometries=geojson`;
           const res = await fetch(url);
           const json = await res.json();
-          
+
           if (json.routes?.[0]) {
             // Flip coords for Leaflet
             setRoutePath(json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]));
@@ -280,7 +376,8 @@ export function DriverDashboard({
     };
 
     calculateRoute();
-  }, [driverId, driverLocation, deliveries]);
+    createDriverRoutes();
+  }, [driverId, driverLocation, deliveries, createDriverRoutes]);
 
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);

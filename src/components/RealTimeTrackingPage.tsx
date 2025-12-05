@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
@@ -85,6 +86,7 @@ interface Delivery {
 
 // --- Icons ---
 
+// Fix for default marker icon issues in React-Leaflet
 const defaultIcon = new L.Icon({
   iconUrl: markerIcon,
   iconSize: [25, 41],
@@ -119,13 +121,12 @@ export function RealTimeTrackingPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [locationHistory, setLocationHistory] = useState<LocationHistory[]>([]);
-  const [autoLoggingEnabled, setAutoLoggingEnabled] = useState(true);
-
+  
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [playbackIndex, setPlaybackIndex] = useState(0);
 
-  // ✅ NEW: State for Routing and Destination
+  // State for Routing and Destination
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<Delivery | null>(null);
 
@@ -297,7 +298,7 @@ export function RealTimeTrackingPage() {
         .from('driver_location_history')
         .select('lat, lng, recorded_at')
         .eq('driver_id', driverId)
-        .order('recorded_at', { ascending: true }); // Ascending for correct playback order
+        .order('recorded_at', { ascending: true });
 
       if (filterStartDate) query = query.gte('recorded_at', filterStartDate);
       if (filterEndDate) query = query.lte('recorded_at', filterEndDate);
@@ -329,15 +330,17 @@ export function RealTimeTrackingPage() {
     fetchLocationHistory(selectedDriver.id);
     
     const interval = setInterval(() => {
-      // Only poll history if not currently playing back
       if(!isPlaying) fetchLocationHistory(selectedDriver.id);
     }, 10000);
 
     return () => clearInterval(interval);
   }, [selectedDriver, filterStartDate, filterEndDate, isPlaying]);
 
-// =================================================================
-  // ✅ 5. IMPROVED ROUTING LOGIC (Handles "NoRoute" Error)
+
+  // =================================================================
+  // ✅ CONSOLIDATED ROUTING LOGIC
+  // Combines logic from previous duplicate effects to handle
+  // active jobs, geocoding, database updates, and OSRM routing.
   // =================================================================
   useEffect(() => {
     if (!selectedDriver) {
@@ -347,12 +350,12 @@ export function RealTimeTrackingPage() {
     }
 
     const calculateRoute = async () => {
-      // A. Find what this driver is currently working on
+      // 1. Find active delivery for selected driver
       const { data: activeJob } = await supabase
         .from('deliveries')
-        .select('id, latitude, longitude, address')
-        .eq('assigned_driver', selectedDriver.driver_id) // or .id depending on your interface
-        .in('status', ['in_transit', 'picked_up'])
+        .select('*')
+        .eq('assigned_driver', selectedDriver.id)
+        .in('status', ['in_transit', 'picked_up', 'assigned'])
         .limit(1)
         .single();
 
@@ -362,129 +365,73 @@ export function RealTimeTrackingPage() {
         return;
       }
 
-      // B. Quick geocode if missing
+      // 2. Geocode if missing
       let destLat = activeJob.latitude;
       let destLng = activeJob.longitude;
-
-      if (!destLat || !destLng) {
-         try {
-           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(activeJob.address)}&limit=1`);
-           const geo = await res.json();
-           if (geo[0]) {
-             destLat = parseFloat(geo[0].lat);
-             destLng = parseFloat(geo[0].lon);
-           }
-         } catch (e) { return; }
-      }
-
-      if (destLat && destLng) {
-         setActiveDestination({ lat: destLat, lng: destLng, address: activeJob.address });
-         
-         try {
-           const startLng = selectedDriver.longitude; // Ensure this is valid
-           const startLat = selectedDriver.latitude;  // Ensure this is valid
-
-           // OSRM URL
-           const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
-           
-           const res = await fetch(url);
-           const json = await res.json();
-
-           // ✅ FIX: Check for "Ok" code. If not "Ok" (e.g., "NoRoute"), fall back to straight line.
-           if (json.code === 'Ok' && json.routes && json.routes[0]) {
-             const path = json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
-             setRoutePath(path);
-           } else {
-             console.warn("OSRM could not find road route:", json.message);
-             // Fallback: Draw straight line
-             setRoutePath([[startLat, startLng], [destLat, destLng]]);
-           }
-         } catch (e) { 
-           console.error("Routing error:", e);
-           // Fallback on crash
-           setRoutePath([[selectedDriver.latitude, selectedDriver.longitude], [destLat, destLng]]);
-         }
-      }
-    };
-
-    calculateRoute();
-  }, [selectedDriver]);
-
-  // =================================================================
-  // ✅ 4. NEW: ROUTING LOGIC (OSRM + Active Delivery)
-  // =================================================================
-  useEffect(() => {
-    if (!selectedDriver || !selectedDriver.location) {
-      setRoutePath([]);
-      return;
-    }
-
-    const calculateRoute = async () => {
-      // 1. Find active delivery for selected driver
-      const { data: deliveries } = await supabase
-        .from('deliveries')
-        .select('*')
-        .eq('assigned_driver', selectedDriver.id)
-        .in('status', ['in_transit', 'picked_up', 'assigned'])
-        .limit(1);
-
-      if (!deliveries || deliveries.length === 0) {
-        setRoutePath([]);
-        setActiveDestination(null);
-        return;
-      }
-
-      const nextStop = deliveries[0];
-      setActiveDestination(nextStop);
-
-      // 2. Geocode if missing (Simple check)
-      let destLat = nextStop.latitude;
-      let destLng = nextStop.longitude;
+      let didGeocode = false;
 
       if (!destLat || !destLng) {
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nextStop.address)}&limit=1`);
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(activeJob.address)}&limit=1`);
           const geo = await res.json();
           if (geo[0]) {
             destLat = parseFloat(geo[0].lat);
             destLng = parseFloat(geo[0].lon);
-            // Save to DB
-            await supabase.from('deliveries').update({ latitude: destLat, longitude: destLng }).eq('id', nextStop.id);
+            didGeocode = true;
           }
         } catch (e) {
-          console.error("Route calculation geocode failed", e);
+          console.error("Geocoding failed", e);
           return;
         }
       }
 
-      // 3. Fetch OSRM Route
-      if (destLat && destLng && selectedDriver.location) {
-        try {
-          const startLng = selectedDriver.location.lng;
-          const startLat = selectedDriver.location.lat;
-          
-          // OSRM URL format: {lng},{lat};{lng},{lat}
-          const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
-          
-          const res = await fetch(url);
-          const data = await res.json();
+      // 3. Update State & Database (if geocoded)
+      if (destLat && destLng) {
+        setActiveDestination({ ...activeJob, latitude: destLat, longitude: destLng });
 
-          if (data.routes && data.routes.length > 0) {
-            // OSRM returns [lng, lat]. Leaflet needs [lat, lng].
-            const coordinates = data.routes[0].geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]]);
-            setRoutePath(coordinates);
+        if (didGeocode) {
+          await supabase
+            .from('deliveries')
+            .update({ latitude: destLat, longitude: destLng })
+            .eq('id', activeJob.id);
+        }
+
+        const startLng = selectedDriver.location?.lng;
+        const startLat = selectedDriver.location?.lat;
+
+        if (!startLng || !startLat) {
+          console.warn("Driver location not available for routing");
+          return;
+        }
+
+        // 4. Calculate Route (OSRM)
+        try {
+          const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          const json = await res.json();
+
+          if (json.code === 'Ok' && json.routes && json.routes[0]) {
+            // OSRM returns [lng, lat], Leaflet needs [lat, lng]
+            const path = json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+            setRoutePath(path);
           } else {
-            // Fallback: Straight line
-            setRoutePath([[startLat, startLng], [destLat, destLng]]);
+            console.warn("OSRM NoRoute or Error:", json.message);
+            setRoutePath([[startLat, startLng], [destLat, destLng]]); // Fallback line
           }
-        } catch (e) {
-          console.error("Routing API failed:", e);
+        } catch (e: any) {
+          console.warn("Routing fallback used due to error:", e.name);
+          setRoutePath([[startLat, startLng], [destLat, destLng]]); // Fallback line
         }
       }
     };
 
     calculateRoute();
-  }, [selectedDriver]); // Run whenever selectedDriver changes or updates location
+  }, [selectedDriver]); // Re-run when driver changes or their DB record updates
 
   // --- Filtering ---
   const filteredDrivers = drivers.filter((driver) => {
@@ -705,11 +652,11 @@ export function RealTimeTrackingPage() {
         </Card>
 
         {/* Map & Details */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6 z=0">
           {/* Map Card */}
           <Card>
             <CardContent className="p-0">
-              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible">
+              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible z-0">
                 <MapContainer
                   center={
                     selectedDriver?.location
@@ -720,13 +667,14 @@ export function RealTimeTrackingPage() {
                   style={{ height: "400px", width: "100%" }}
                 >
                   <TileLayer
+                    className = "z-1"
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
 
                   <PanToSelectedDriver selectedDriver={selectedDriver} />
                   
-                  {/* ✅ ADDED: Render Route Path */}
+                  {/* Route Path */}
                   {routePath.length > 0 && (
                     <Polyline 
                       positions={routePath} 
@@ -736,7 +684,7 @@ export function RealTimeTrackingPage() {
                     />
                   )}
 
-                  {/* ✅ ADDED: Destination Marker */}
+                  {/* Destination Marker */}
                   {activeDestination && activeDestination.latitude && (
                     <Marker position={[activeDestination.latitude, activeDestination.longitude!]} icon={L.divIcon({ className: "bg-red-600 rounded-full w-4 h-4 border-2 border-white", iconSize: [16, 16] })}>
                       <Popup>Destination: {activeDestination.address}</Popup>
@@ -960,7 +908,7 @@ export function RealTimeTrackingPage() {
                       min={0}
                       max={Math.max(0, locationHistory.length - 1)}
                       step={1}
-                      onValueChange={(val) => {
+                      onValueChange={(val: number[]) => {
                         setPlaybackIndex(val[0]);
                       }}
                       className="w-full"
