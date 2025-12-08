@@ -62,7 +62,7 @@ interface OptimizedRoute {
   stops: number;
   distance: number; // in km
   estimatedTime: string; // formatted string
-  status: "active" | "completed";
+  status: "active" | "assigned" | "completed";
   deliveries: Delivery[]; // All deliveries in this route
   polyline: [number, number][]; // The full, ordered polyline for the tour
 }
@@ -155,6 +155,15 @@ export function RouteOptimizationPage() {
   const [scheduledDeliveries, setScheduledDeliveries] = useState<ScheduledDelivery[]>([]);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  const [availabilityFilter, setAvailabilityFilter] = useState("all");
+
+  const filteredDrivers = drivers.filter((driver) => {
+    if (availabilityFilter === "all") return true;
+    if (availabilityFilter === "online") return driver.status === "online";
+    if (availabilityFilter === "offline") return driver.status === "offline";
+    return true;
+  });
+
   
   // ------------------ 1. Fetch Deliveries ------------------
   const refreshDeliveries = async () => {
@@ -697,7 +706,7 @@ const formatStatus = (status: string) => {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 <span>Driver Availability</span>
-                <Select defaultValue="all">
+                <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
                   <SelectTrigger className="w-40">
                     <SelectValue />
                   </SelectTrigger>
@@ -720,7 +729,7 @@ const formatStatus = (status: string) => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {drivers.map((driver) => (
+                  {filteredDrivers.map((driver) => (
                     <TableRow key={driver.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
