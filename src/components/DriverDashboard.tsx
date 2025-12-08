@@ -1,21 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Card, CardContent } from "./ui/card";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import { DriverDeliveryDetail } from "./DriverDeliveryDetail";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { DriverDeliveryDetail, Delivery, DeliveryStatus } from "@/components/DriverDeliveryDetail"; 
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-import { useGPSUploader } from "../drivermaptracker/gpsTracker";
-import { Package, MapPin, Truck, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { useGPSUploader } from "../drivermaptracker/gpsTracker"; 
+import { Truck, MapPin, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { supabase } from "../utils/supabase/client";
-import { PanToSelectedDriver } from "./PanToSelectedDriver";
+import { supabase } from "../utils/supabase/client"; 
 
-// --- Icons ---
+// --- Map Icons ---
 const defaultIcon = L.icon({
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
@@ -24,28 +23,16 @@ const defaultIcon = L.icon({
   popupAnchor: [1, -34],
 });
 
-// --- Types ---
-type DeliveryStatus =
-  | "pending"
-  | "assigned"
-  | "picked_up"
-  | "in-transit"
-  | "delivered"
-  | "returned";
-
-interface DriverDelivery {
-  id: string;
-  driver_id: string;
-  refNo: string;
-  customer: string;
-  address: string;
-  status: DeliveryStatus;
-  paymentType: "COD" | "Paid";
-  amount?: number;
-  latitude?: number | null;
-  longitude?: number | null;
+// --- Helper: Pan Map ---
+function PanToDriver({ location }: { location: [number, number] | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (location) map.flyTo(location, 15, { animate: true, duration: 1.5 });
+  }, [location, map]);
+  return null;
 }
 
+// --- Types ---
 interface DriverRoute {
   id: string;
   name: string;
@@ -53,52 +40,37 @@ interface DriverRoute {
   distance: number;
   estimatedTime: string;
   status: "active" | "planned" | "completed";
-  deliveries: DriverDelivery[];
+  deliveries: Delivery[];
   polyline: [number, number][];
 }
 
 interface DriverDashboardProps {
   driverId: string;
   driverName: string;
-  onUpdateStatus: (deliveryId: string, status: DeliveryStatus) => void;
-  onUploadPOD: (deliveryId: string) => void;
+  onUpdateStatus?: (id: string, status: DeliveryStatus) => void;
+  onUploadPOD: (id: string) => void;
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
 }
 
-// --- Helper: Pan Map ---
-function PanToDriver({ location }: { location: [number, number] | null }) {
-  const map = useMap();
-  useEffect(() => {
-    if (location) {
-      map.flyTo(location, 15, { animate: true, duration: 1.5 });
-    }
-  }, [location, map]);
-  return null;
-}
-
-// --- Main Component ---
 export function DriverDashboard({
-  driverId, 
-  driverName, 
-  onUpdateStatus: _unusedProp, 
+  driverId,
+  driverName,
   onUploadPOD,
   onLogout,
   isDarkMode,
   onToggleDarkMode,
 }: DriverDashboardProps) {
   // --- State ---
-  const [deliveries, setDeliveries] = useState<DriverDelivery[]>([]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
-
+  
   // Routing State
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
   const [driverRoutes, setDriverRoutes] = useState<DriverRoute[]>([]);
-  const [selectedRoute, setSelectedRoute] = useState<DriverRoute | null>(null);
-
   const mapRef = useRef<L.Map | null>(null);
 
   // --- Helpers ---
@@ -107,10 +79,10 @@ export function DriverDashboard({
       case "pending": return "pending";
       case "assigned": return "assigned";
       case "picked_up": return "picked_up";
-      case "in_transit":
-      case "in-transit": return "in-transit";
+      case "in-transit": case "in_transit": return "in-transit";
       case "delivered": return "delivered";
       case "returned": return "returned";
+      case "rescheduled": return "rescheduled";
       default: return "pending";
     }
   };
@@ -128,6 +100,7 @@ export function DriverDashboard({
       case "in-transit": return "bg-orange-100 text-orange-800 border-orange-200";
       case "delivered": return "bg-green-100 text-green-800 border-green-200";
       case "returned": return "bg-red-100 text-red-800 border-red-200";
+      case "rescheduled": return "bg-indigo-100 text-indigo-800 border-indigo-200";
       default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
@@ -143,47 +116,52 @@ export function DriverDashboard({
 
       if (error) throw error;
 
-      const transformed: DriverDelivery[] = (data || []).map((d: any) => ({
+      const transformed: Delivery[] = (data || []).map((d: any) => ({
         id: d.id,
         refNo: d.ref_no,
         customer: d.customer_name,
         address: d.address,
         status: mapStatus(d.status),
-        driver_id: d.assigned_driver,
         paymentType: d.payment_type,
         amount: d.total_amount,
+        phone: d.contact_number,
         latitude: d.latitude,
         longitude: d.longitude,
+        type: d.type || "outbound",
       }));
-
       setDeliveries(transformed);
     } catch (err: any) {
-      console.error("Error fetching deliveries:", err);
+      console.error("Fetch Error:", err);
       toast.error("Failed to load deliveries");
     }
   }, []);
 
-  // --- 2. Update Status in DB ---
-  const updateStatusInDb = async (deliveryId: string, nextStatus: DeliveryStatus) => {
+  // --- 2. Update Status (Clean RPC Version) ---
+  const updateStatusInDb = async (deliveryId: string, nextStatus: DeliveryStatus, reason?: string) => {
     try {
       if (!driverId) throw new Error("Driver ID missing");
 
+      // We send everything to the database function.
+      // It handles timestamps, notes, and inventory logic automatically.
       const payload = {
         p_delivery_id: deliveryId,
         p_new_status: toDbStatus(nextStatus),
+        p_reason: reason || null, // Send reason (e.g. "Damaged") or null
       };
 
       const { error } = await supabase.rpc("update_order_status", payload);
+
       if (error) throw error;
 
-      // Optimistic Update
+      // Optimistic Update (Update UI instantly)
       setDeliveries((prev) =>
         prev.map((d) => (d.id === deliveryId ? { ...d, status: nextStatus } : d))
       );
+      
+      toast.success(`Updated: ${nextStatus.replace('_', ' ').toUpperCase()}`);
 
-      toast.success(`Status updated: ${nextStatus}`);
     } catch (e: any) {
-      console.error("Update status failed:", e);
+      console.error("Update failed:", e);
       toast.error(e.message || "Failed to update status");
     }
   };
@@ -195,9 +173,7 @@ export function DriverDashboard({
 
     const channel = supabase
       .channel(`driver-deliveries-${driverId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "deliveries", filter: `assigned_driver=eq.${driverId}` },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "deliveries", filter: `assigned_driver=eq.${driverId}` }, 
         () => fetchDriverDeliveries(driverId)
       )
       .subscribe();
@@ -205,34 +181,29 @@ export function DriverDashboard({
     return () => { supabase.removeChannel(channel); };
   }, [driverId, fetchDriverDeliveries]);
 
-  // --- 4. GPS Tracking Hooks ---
+  // --- 4. GPS Tracking ---
   useGPSUploader(driverId);
 
   useEffect(() => {
     if (!driverId) return;
-
     const fetchLoc = async () => {
       const { data } = await supabase.from("drivers").select("last_lat, last_lng").eq("id", driverId).single();
       if (data?.last_lat && data?.last_lng) setDriverLocation([data.last_lat, data.last_lng]);
     };
     fetchLoc();
-
+    
     const channel = supabase
       .channel(`driver-location-${driverId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "drivers", filter: `id=eq.${driverId}` },
-        (payload) => {
-          const { last_lat, last_lng } = payload.new as any;
-          if (last_lat && last_lng) setDriverLocation([last_lat, last_lng]);
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "drivers", filter: `id=eq.${driverId}` }, 
+        (payload: any) => {
+          if (payload.new.last_lat) setDriverLocation([payload.new.last_lat, payload.new.last_lng]);
         }
       )
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   }, [driverId]);
 
-  // --- 5. Create Routes from Deliveries ---
+  // --- 5. Full Route Optimization ---
   const createDriverRoutes = useCallback(async () => {
     if (!driverId || !driverLocation || deliveries.length === 0) {
       setDriverRoutes([]);
@@ -240,17 +211,14 @@ export function DriverDashboard({
     }
 
     try {
-      // Group deliveries by status for different route types
       const activeDeliveries = deliveries.filter(d => ['assigned', 'picked_up', 'in-transit'].includes(d.status));
       const completedDeliveries = deliveries.filter(d => d.status === 'delivered');
-      const returnedDeliveries = deliveries.filter(d => d.status === 'returned');
 
       const routes: DriverRoute[] = [];
 
-      // Create active route
       if (activeDeliveries.length > 0) {
         const coords = [
-          [driverLocation[1], driverLocation[0]], // driver location (lng, lat)
+          [driverLocation[1], driverLocation[0]], 
           ...activeDeliveries
             .filter(d => d.longitude && d.latitude)
             .map(d => [d.longitude!, d.latitude!])
@@ -268,7 +236,7 @@ export function DriverDashboard({
                 id: 'active-route',
                 name: 'Active Deliveries Route',
                 stops: activeDeliveries.length,
-                distance: trip.distance / 1000, // meters to km
+                distance: trip.distance / 1000,
                 estimatedTime: `${Math.round(trip.duration / 60)} min`,
                 status: 'active',
                 deliveries: activeDeliveries,
@@ -280,43 +248,16 @@ export function DriverDashboard({
           }
         }
       }
-
-      // Create completed route
-      if (completedDeliveries.length > 0) {
-        routes.push({
-          id: 'completed-route',
-          name: 'Completed Deliveries',
-          stops: completedDeliveries.length,
-          distance: 0,
-          estimatedTime: 'Completed',
-          status: 'completed',
-          deliveries: completedDeliveries,
-          polyline: []
-        });
-      }
-
-      // Create returned route
-      if (returnedDeliveries.length > 0) {
-        routes.push({
-          id: 'returned-route',
-          name: 'Returned Deliveries',
-          stops: returnedDeliveries.length,
-          distance: 0,
-          estimatedTime: 'Returned',
-          status: 'completed',
-          deliveries: returnedDeliveries,
-          polyline: []
-        });
-      }
-
       setDriverRoutes(routes);
     } catch (err) {
       console.error("Error creating driver routes:", err);
     }
   }, [driverId, driverLocation, deliveries]);
 
-  // --- 6. Routing & Geocoding Logic ---
+  // --- 6. Active Point-to-Point Routing ---
   useEffect(() => {
+    createDriverRoutes();
+
     if (!driverId || !driverLocation || deliveries.length === 0) {
       setRoutePath([]);
       setActiveDestination(null);
@@ -324,9 +265,8 @@ export function DriverDashboard({
     }
 
     const calculateRoute = async () => {
-      // Prioritize active statuses
       const priorityOrder: DeliveryStatus[] = ["in-transit", "picked_up", "assigned"];
-      let nextDelivery: DriverDelivery | undefined;
+      let nextDelivery: Delivery | undefined;
 
       for (const s of priorityOrder) {
         nextDelivery = deliveries.find((d) => d.status === s);
@@ -334,15 +274,13 @@ export function DriverDashboard({
       }
 
       if (!nextDelivery) {
-        setRoutePath([]);
+        setRoutePath([]); 
         setActiveDestination(null);
         return;
       }
 
-      let lat = nextDelivery.latitude;
-      let lng = nextDelivery.longitude;
+      let { latitude: lat, longitude: lng } = nextDelivery;
 
-      // Auto-Geocode if missing
       if (!lat || !lng) {
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(nextDelivery.address)}&limit=1`);
@@ -350,7 +288,6 @@ export function DriverDashboard({
           if (geo[0]) {
             lat = parseFloat(geo[0].lat);
             lng = parseFloat(geo[0].lon);
-            // Save coords to DB so we don't fetch again
             await supabase.from("deliveries").update({ latitude: lat, longitude: lng }).eq("id", nextDelivery.id);
           }
         } catch (e) { console.error("Geocode error", e); }
@@ -359,16 +296,12 @@ export function DriverDashboard({
       if (lat && lng) {
         setActiveDestination({ lat, lng });
         try {
-          // OSRM Routing
           const url = `https://router.project-osrm.org/route/v1/driving/${driverLocation[1]},${driverLocation[0]};${lng},${lat}?overview=full&geometries=geojson`;
           const res = await fetch(url);
           const json = await res.json();
-
           if (json.routes?.[0]) {
-            // Flip coords for Leaflet
             setRoutePath(json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]));
           } else {
-            // Fallback straight line
             setRoutePath([driverLocation, [lat, lng]]);
           }
         } catch (e) { console.error("Routing error", e); }
@@ -376,16 +309,14 @@ export function DriverDashboard({
     };
 
     calculateRoute();
-    createDriverRoutes();
   }, [driverId, driverLocation, deliveries, createDriverRoutes]);
-
 
   const selectedDelivery = deliveries.find((d) => d.id === selectedDeliveryId);
 
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
-        {/* Header */}
+        
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Truck className="w-6 h-6 text-[#27AE60]" />
@@ -393,9 +324,7 @@ export function DriverDashboard({
           </div>
           <div className="flex gap-2">
             <Tooltip>
-               <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon"><User className="w-5 h-5" /></Button>
-               </TooltipTrigger>
+               <TooltipTrigger asChild><Button variant="ghost" size="icon"><User className="w-5 h-5" /></Button></TooltipTrigger>
                <TooltipContent><p>{driverName || "Driver"}</p></TooltipContent>
             </Tooltip>
             <Button variant="ghost" size="icon" onClick={onToggleDarkMode}>
@@ -407,21 +336,20 @@ export function DriverDashboard({
           </div>
         </header>
 
-        {/* Main Content */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
-              delivery={selectedDelivery as any}
+              delivery={selectedDelivery}
               onBack={() => setSelectedDeliveryId(null)}
-              onUpdateStatus={(s) => {
-                updateStatusInDb(selectedDelivery.id, s);
+              onUpdateStatus={(s, reason) => {
+                updateStatusInDb(selectedDelivery.id, s, reason);
                 setSelectedDeliveryId(null);
               }}
               onUploadPOD={() => onUploadPOD(selectedDelivery.id)}
             />
           ) : (
             <>
-              {/* Map Card */}
+              {/* Map View */}
               <Card className="border-0 shadow-sm">
                 <CardContent className="p-4">
                   <div className="h-[400px] w-full relative rounded-lg overflow-hidden z-0">
@@ -429,24 +357,21 @@ export function DriverDashboard({
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OpenStreetMap" />
                       <PanToDriver location={driverLocation} />
                       
-                      {/* Driver Marker */}
                       {driverLocation && <Marker position={driverLocation} icon={defaultIcon}><Popup>You</Popup></Marker>}
                       
-                      {/* Destination Marker */}
                       {activeDestination && (
                          <Marker position={[activeDestination.lat, activeDestination.lng]} icon={L.divIcon({ className: "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow", iconSize: [16, 16] })}>
-                           <Popup>Delivery Location</Popup>
+                           <Popup>Next Stop</Popup>
                          </Marker>
                       )}
 
-                      {/* Route Line */}
                       {routePath.length > 0 && <Polyline positions={routePath} color="#3B82F6" weight={5} opacity={0.8} />}
                     </MapContainer>
 
                     {activeDestination && (
                        <div className="absolute bottom-4 left-4 right-4 bg-white/90 p-3 rounded shadow z-[1000] text-xs border flex justify-between">
-                          <span><strong>Next Stop:</strong> Routing Active</span>
-                          <Navigation className="w-4 h-4 text-blue-600"/>
+                         <span><strong>Next Stop:</strong> Routing Active</span>
+                         <Navigation className="w-4 h-4 text-blue-600"/>
                        </div>
                     )}
                   </div>
@@ -473,14 +398,6 @@ export function DriverDashboard({
                         <p className="text-sm text-gray-500">{delivery.address}</p>
                       </div>
                       
-                      {/* Payment Info */}
-                      {delivery.paymentType === "COD" && delivery.amount && (
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 border border-yellow-100 dark:border-yellow-800">
-                          <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">💰 Collect COD: ₱{delivery.amount.toLocaleString()}</p>
-                        </div>
-                      )}
-
-                      {/* Action Buttons */}
                       <div className="flex gap-2 pt-2">
                         {delivery.status === "assigned" && (
                           <Button size="sm" className="flex-1 bg-[#27AE60] text-white hover:bg-[#219150]" onClick={() => updateStatusInDb(delivery.id, "picked_up")}>Accept</Button>

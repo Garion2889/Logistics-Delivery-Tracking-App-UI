@@ -176,25 +176,6 @@ export function DeliveryManagement({
                             <UserPlus className="w-4 h-4" />
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onUpdateDelivery(delivery)}
-                          title="Update"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        {delivery.status === "in-transit" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onMarkComplete(delivery)}
-                            title="Mark Complete"
-                            className="text-green-600"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                          </Button>
-                        )}
                       </div>
                     </TableCell>
                   </TableRow>

@@ -62,7 +62,7 @@ interface OptimizedRoute {
   stops: number;
   distance: number; // in km
   estimatedTime: string; // formatted string
-  status: "active" | "planned" | "completed";
+  status: "active" | "completed";
   deliveries: Delivery[]; // All deliveries in this route
   polyline: [number, number][]; // The full, ordered polyline for the tour
 }
@@ -551,8 +551,6 @@ const formatStatus = (status: string) => {
         return "bg-blue-600 text-white";
       case "assigned":
         return "bg-blue-100 text-blue-700";
-      case "planned":
-        return "bg-gray-600 text-white";
       case "completed":
         return "bg-green-100 text-green-700";
       default:
@@ -622,9 +620,6 @@ const formatStatus = (status: string) => {
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
                   {optimizedRoutes.filter((r) => r.status === "active").length}
                 </h3>
-                <p className="text-xs text-blue-600 mt-1">
-                  {optimizedRoutes.filter((r) => r.status === "planned").length} planned
-                </p>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                 <Route className="w-6 h-6 text-blue-600" />
