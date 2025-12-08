@@ -353,6 +353,10 @@ export function RouteOptimizationPage() {
       await fetchAssignedRoutes(); // Updates list on left side
       setActiveTab("routes"); // Switch tab so user sees the result
 
+      setTimeout(() => {
+            window.location.reload();
+          }, 300);
+
     } catch (err: any) {
       toast.dismiss();
       console.error("Auto assign error:", err);
