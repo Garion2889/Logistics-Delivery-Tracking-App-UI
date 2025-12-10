@@ -527,13 +527,13 @@ export function RouteOptimizationPage() {
     return sum / performanceRows.length;
   }, [performanceRows]);
 
-  const totalDistance = useMemo(() => {
-    if (performanceRows.length === 0) return null;
-    return performanceRows.reduce(
-      (s, r) => s + Number(r.distance_traveled_km || 0),
-      0
-    );
-  }, [performanceRows]);
+// ------------------ Derived KPI values ------------------
+const totalDistance = useMemo(() => {
+  if (!optimizedRoutes || optimizedRoutes.length === 0) return 0;
+
+  // Sum distance of all routes (in km)
+  return optimizedRoutes.reduce((sum, route) => sum + (route.distance || 0), 0);
+}, [optimizedRoutes]);
 
   // ------------------ Helpers ------------------
 const formatStatus = (status: string) => {
@@ -668,10 +668,10 @@ const formatStatus = (status: string) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Total Distance
+                  Total Distance of Routes
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {totalDistance == null ? "—" : totalDistance.toFixed(1)} km
+                    {totalDistance.toFixed(1)} km
                 </h3>
                 <p className="text-xs text-[#222B2D]/60 dark:text-white/60 mt-1">
                   Range Selected
