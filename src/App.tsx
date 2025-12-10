@@ -3,7 +3,7 @@ import { LoginPageWithAuth } from "./components/LoginPageWithAuth";
 import { AdminLayout } from "./components/AdminLayout";
 import { AdminDashboard } from "./components/AdminDashboard";
 import { DeliveryManagement } from "./components/DeliveryManagement";
-import { DeliveryDetail } from "./components/DeliveryDetail";
+import { DeliveryDetail, Delivery as DetailedDelivery } from "./components/DeliveryDetail"; // Import type from component
 import { DriverManagement } from "./components/DriverManagement";
 import { DriverDashboard } from "./components/DriverDashboard";
 import { PublicTracking } from "./components/PublicTracking";
@@ -16,7 +16,7 @@ import { CreateDriverModal } from "./components/CreateDriverModal";
 import { EditDriverModal } from "./components/EditDriverModal";
 import { Toaster } from "./components/ui/sonner";
 import { AssignDriverModal } from "./components/AssignDriverModal";
-import { useGPSUploader } from "./drivermaptracker/gpsTracker"; // Make sure this path matches where you saved the hook
+import { useGPSUploader } from "./drivermaptracker/gpsTracker";
 
 import { toast } from "sonner";
 import { trackDelivery, fetchAllDrivers, supabase, updateOrderStatus as updateOrderStatusRpc } from "./lib/supabase";
@@ -27,7 +27,8 @@ import "./styles/globals.css";
 
 // ------------------ Types ------------------
 
-interface Delivery {
+// This is the "Light" version used for the list table
+interface DeliveryList {
   id: string;
   refNo: string;
   customer: string;
@@ -38,12 +39,6 @@ interface Delivery {
   updatedAt: string;
   phone?: string;
   amount?: number;
-  timeline?: {
-    status: string;
-    label: string;
-    date?: string;
-    completed: boolean;
-  }[];
 }
 
 export interface Driver {
@@ -76,12 +71,17 @@ export interface Driver {
 export default function App() {
   const [currentView, setCurrentView] = useState<"login" | "admin" | "driver" | "tracking">("login");
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
-  const [userId, setUserId] = useState(""); // Store admin/driver ID
+  
+  // Use the Detailed type for the modal
+  const [selectedDelivery, setSelectedDelivery] = useState<DetailedDelivery | null>(null);
+  
+  const [userId, setUserId] = useState(""); 
   const [userRole, setUserRole] = useState<"admin" | "driver" | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   
-  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+  // Use the List type for the table
+  const [deliveries, setDeliveries] = useState<DeliveryList[]>([]);
+  
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [createDriverModal, setCreateDriverModal] = useState(false);
   const [editDriverModal, setEditDriverModal] = useState<{
@@ -90,12 +90,11 @@ export default function App() {
   }>({ open: false, driver: null });
   const [assignDriverModal, setAssignDriverModal] = useState({
     open: false,
-    delivery: null as Delivery | null, });
+    delivery: null as DeliveryList | null, 
+  });
   
 
   // ---------- GPS Tracking Hook ----------
-  // This will automatically start tracking if the user is a driver and has an ID
-  // It effectively runs in the background while the driver is using the app
   useGPSUploader(userRole === "driver" ? userId : null);
 
 
@@ -120,7 +119,6 @@ export default function App() {
   // ---------- Handlers ----------
 
     const handleAdminLogin = (token: string, profile: any) => {
-      // For admins, we'll use their user_id.
       const adminId = profile.user_id || profile.id;
       localStorage.setItem("supabaseAccessToken", token);
       localStorage.setItem("userId", adminId);
@@ -137,8 +135,6 @@ export default function App() {
     };
   
     const handleDriverLogin = (token: string, profile: any) => {
-      // The profile is the rich object from supabase with user_info nested.
-      // We construct a flat Driver object that matches the app's interface.
       const driverProfile: Driver = {
           id: profile.id,
           user_id: profile.user_id,
@@ -152,7 +148,6 @@ export default function App() {
           is_active: profile.is_active,
           created_at: profile.created_at,
           updated_at: profile.updated_at,
-          // Optional fields from Driver interface that may not be in profile
           last_lat: profile.last_lat,
           last_lng: profile.last_lng,
           last_location_update: profile.last_location_update,
@@ -164,17 +159,15 @@ export default function App() {
           deactivatedAt: profile.deactivatedAt,
       };
   
-      // For drivers, we use the 'id' from the 'drivers' table.
       const driverId = driverProfile.id;
       localStorage.setItem("supabaseAccessToken", token);
-  localStorage.setItem("userId", driverId);
+      localStorage.setItem("userId", driverId);
       localStorage.setItem("userRole", "driver");
   
-      setUserId(driverId); // This is used by useGPSUploader
+      setUserId(driverId); 
       setUserRole("driver");
       setCurrentView("driver");
   
-      // Update the drivers state with the logged-in driver's full info
       setDrivers(prev => {
           const exists = prev.some(d => d.id === driverProfile.id);
           if (exists) {
@@ -200,7 +193,6 @@ export default function App() {
     setUserRole(null);
     setIsDarkMode(false);
 
-    // Clear session
     localStorage.removeItem("userId");
     localStorage.removeItem("userRole");
     localStorage.removeItem("currentPage");
@@ -210,7 +202,7 @@ export default function App() {
     toast.info("Logged out successfully");
   };
 
-  const handleUpdateDeliveryStatus = async (deliveryId: string, status: Delivery["status"]) => {
+  const handleUpdateDeliveryStatus = async (deliveryId: string, status: DeliveryList["status"]) => {
     try {
       const dbStatus = mapStatusToDB(status);
       await updateOrderStatusRpc(deliveryId, dbStatus as any);
@@ -246,7 +238,7 @@ export default function App() {
         email: driverData.email,
         password: driverData.password,
         phone: driverData.phone,
-        vehicle_type: driverData.vehicle, // e.g. "Motorcycle"
+        vehicle_type: driverData.vehicle, 
       }),
     });
 
@@ -260,7 +252,6 @@ export default function App() {
       );
     }
 
-    // Create frontend driver object
     const newDriver: Driver = {
       id: data.driver.id,
       user_id: data.driver.user_id,
@@ -292,21 +283,19 @@ export default function App() {
   }
 };
 
-// App.tsx or wherever onUpdate lives
 const handleUpdateDriver = async (
   driverId: string,
   userId: string,
   updates: Partial<Driver>
 ) => {
   try {
-    // Prepare vehicle JSON if needed
     let vehicleJson: Record<string, string> | null = null;
     if (updates.vehicle) {
-      vehicleJson = { type: updates.vehicle }; // adjust if more vehicle info exists
+      vehicleJson = { type: updates.vehicle }; 
     }
 
     const { data, error } = await supabase.rpc("update_driver_profile", {
-      p_caller: userId,          // admin UUID or driver themselves
+      p_caller: userId, 
       p_driver_id: driverId,
       p_full_name: updates.name ?? null,
       p_email: updates.email ?? null,
@@ -316,9 +305,6 @@ const handleUpdateDriver = async (
 
     if (error) throw error;
 
-    console.log("Driver updated successfully:", data);
-
-    // Optionally update local state
     setDrivers((prev) =>
       prev.map((d) =>
         d.id === driverId
@@ -338,13 +324,12 @@ const handleUpdateDriver = async (
 const handleDeactivateDriver = async (driverId: string) => {
   try {
     const { error } = await supabase.rpc("deactivate_driver_account", {
-      p_caller: userId, // admin UUID
+      p_caller: userId, 
       p_driver_id: driverId,
     });
 
     if (error) throw error;
 
-    // Update local state so UI reflects the change immediately
     setDrivers((prev) =>
       prev.map((d) =>
         d.id === driverId ? { ...d, status: "deactivated" } : d
@@ -358,13 +343,10 @@ const handleDeactivateDriver = async (driverId: string) => {
   }
 };
 
-
-
   const driverDeliveries = deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit"));
 
-  // Map database status to UI status
-  const mapStatus = (dbStatus: string): Delivery["status"] => {
-    const mapping: Record<string, Delivery["status"]> = {
+  const mapStatus = (dbStatus: string): DeliveryList["status"] => {
+    const mapping: Record<string, DeliveryList["status"]> = {
       'created': 'pending',
       'assigned': 'assigned',
       'picked_up': 'assigned',
@@ -389,12 +371,12 @@ const handleDeactivateDriver = async (driverId: string) => {
     return labels[status] || status;
   };
 
-  // Handle track delivery with Supabase
   const handleTrackDelivery = async (refNo: string) => {
     try {
       const data = await trackDelivery(refNo);
 
-      // Transform to UI format
+      // Transform to UI format for Public Tracking
+      // Note: This matches the PublicTracking expected props
       return {
         refNo: data.ref_no,
         customer: data.customer_name,
@@ -450,7 +432,7 @@ const handleDeactivateDriver = async (driverId: string) => {
     toast.success(`Driver assigned to ${refNo}`);
 
     setAssignDriverModal({ open: false, delivery: null });
-    await fetchDeliveries(); // 🔥 refresh table
+    await fetchDeliveries(); 
   } catch (err: any) {
     toast.error(err.message);
   }
@@ -460,12 +442,11 @@ const handleDeactivateDriver = async (driverId: string) => {
   id: d.id,
   name: d.name,
   email: d.email,
-  vehicle: d.vehicle_type || "Unknown",   // modal requires `vehicle`
+  vehicle: d.vehicle_type || "Unknown", 
   status: d.status,
-  activeDeliveries: 0,                   // or compute real number later
+  activeDeliveries: 0, 
 });
 
-  // Persist current page and dark mode whenever they change
   useEffect(() => {
     localStorage.setItem("currentPage", currentPage);
   }, [currentPage]);
@@ -482,6 +463,26 @@ const handleDeactivateDriver = async (driverId: string) => {
   }
 }, [userRole]);
 
+  // NEW: This fetches the full details for the View modal
+  const handleViewDelivery = async (listDelivery: DeliveryList) => {
+    try {
+      const { data, error } = await supabase
+        .from('admin_deliveries_view')
+        .select('*')
+        .eq('id', listDelivery.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setSelectedDelivery(data as DetailedDelivery);
+      }
+    } catch (err: any) {
+      toast.error("Failed to load delivery details");
+      console.error(err);
+    }
+  };
+
   const fetchDeliveries = async () => {
     try {
       const { data, error } = await supabase
@@ -497,7 +498,7 @@ const handleDeactivateDriver = async (driverId: string) => {
 
       if (error) throw error;
 
-      const transformed = (data || []).map((d: any) => ({
+      const transformed: DeliveryList[] = (data || []).map((d: any) => ({
         id: d.id,
         refNo: d.ref_no,
         customer: d.customer_name,
@@ -516,11 +517,11 @@ const handleDeactivateDriver = async (driverId: string) => {
     }
   };
 
-  const mapStatusToDB = (uiStatus: Delivery['status']): string => {
-    const mapping: Record<Delivery['status'], string> = {
+  const mapStatusToDB = (uiStatus: DeliveryList['status']): string => {
+    const mapping: Record<DeliveryList['status'], string> = {
       'pending': 'created',
-      'assigned': 'picked_up',  // Accept Assignment = picked up the package
-      'in-transit': 'delivered', // Confirm Delivery = mark as delivered
+      'assigned': 'picked_up', 
+      'in-transit': 'delivered',
       'delivered': 'delivered',
       'returned': 'returned',
     };
@@ -540,12 +541,6 @@ const handleDeactivateDriver = async (driverId: string) => {
     activeDeliveries: deliveries.filter(d => d.status === "in-transit").length,
     completedDeliveries: deliveries.filter(d => d.status === "delivered").length,
     returns: deliveries.filter(d => d.status === "returned").length,
-  };
-
-  const driverStats = {
-    total: deliveries.filter(d => d.driver === userId && (d.status === "assigned" || d.status === "in-transit")).length,
-    completed: deliveries.filter(d => d.driver === userId && d.status === "delivered").length,
-    returned: deliveries.filter(d => d.driver === userId && d.status === "returned").length,
   };
 
   // ---------- Render ----------
@@ -571,8 +566,6 @@ const handleDeactivateDriver = async (driverId: string) => {
         <DriverDashboard
           driverId={userId}
           driverName={drivers.find(d => d.id === userId)?.name || "Driver"}
-          onUpdateStatus={handleUpdateDeliveryStatus}
-          onUploadPOD={handleUploadPOD}
           onLogout={handleLogout}
           isDarkMode={isDarkMode}
           onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
@@ -584,7 +577,10 @@ const handleDeactivateDriver = async (driverId: string) => {
         <>
           <AdminLayout
             currentPage={currentPage}
-            onNavigate={setCurrentPage}
+            onNavigate={(page) => {
+              setCurrentPage(page);
+              setSelectedDelivery(null);
+            }}
             onLogout={handleLogout}
             isDarkMode={isDarkMode}
             onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
@@ -596,11 +592,11 @@ const handleDeactivateDriver = async (driverId: string) => {
               <AdminDashboard stats={dashboardStats} />
             ) : currentPage === "deliveries" ? (
               <DeliveryManagement
-               deliveries={deliveries} 
-               onViewDelivery={setSelectedDelivery} 
-               onAssignDriver={(delivery) => setAssignDriverModal({ open: true, delivery })} 
-               onUpdateDelivery={() => {}} 
-               onMarkComplete={() => {}} />
+                deliveries={deliveries} 
+                onViewDelivery={(d: any) => handleViewDelivery(d)} 
+                onAssignDriver={(delivery: any) => setAssignDriverModal({ open: true, delivery })} 
+                onUpdateDelivery={() => {}} 
+                onMarkComplete={() => {}} />
             ) : currentPage === "drivers" ? (
               <DriverManagement
                 drivers={drivers}

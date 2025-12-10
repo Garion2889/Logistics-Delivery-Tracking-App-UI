@@ -9,7 +9,7 @@ import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useGPSUploader } from "../drivermaptracker/gpsTracker"; 
-import { Truck, MapPin, User, LogOut, Moon, Sun, Navigation } from "lucide-react";
+import { Truck, User, LogOut, Moon, Sun, Navigation, MapPin } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { supabase } from "../utils/supabase/client"; 
@@ -32,7 +32,6 @@ function PanToDriver({ location }: { location: [number, number] | null }) {
   return null;
 }
 
-// --- Types ---
 interface DriverRoute {
   id: string;
   name: string;
@@ -47,8 +46,6 @@ interface DriverRoute {
 interface DriverDashboardProps {
   driverId: string;
   driverName: string;
-  onUpdateStatus?: (id: string, status: DeliveryStatus) => void;
-  onUploadPOD: (id: string) => void;
   onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
@@ -57,7 +54,6 @@ interface DriverDashboardProps {
 export function DriverDashboard({
   driverId,
   driverName,
-  onUploadPOD,
   onLogout,
   isDarkMode,
   onToggleDarkMode,
@@ -66,8 +62,6 @@ export function DriverDashboard({
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
   const [driverLocation, setDriverLocation] = useState<[number, number] | null>(null);
-  
-  // Routing State
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
   const [driverRoutes, setDriverRoutes] = useState<DriverRoute[]>([]);
@@ -136,37 +130,90 @@ export function DriverDashboard({
     }
   }, []);
 
-  // --- 2. Update Status (Clean RPC Version) ---
+  // --- 2. Update Status (Pure RPC) ---
   const updateStatusInDb = async (deliveryId: string, nextStatus: DeliveryStatus, reason?: string) => {
     try {
       if (!driverId) throw new Error("Driver ID missing");
 
-      // We send everything to the database function.
-      // It handles timestamps, notes, and inventory logic automatically.
       const payload = {
         p_delivery_id: deliveryId,
         p_new_status: toDbStatus(nextStatus),
-        p_reason: reason || null, // Send reason (e.g. "Damaged") or null
+        p_reason: reason || null,
       };
 
       const { error } = await supabase.rpc("update_order_status", payload);
 
       if (error) throw error;
 
-      // Optimistic Update (Update UI instantly)
       setDeliveries((prev) =>
         prev.map((d) => (d.id === deliveryId ? { ...d, status: nextStatus } : d))
       );
-      
       toast.success(`Updated: ${nextStatus.replace('_', ' ').toUpperCase()}`);
 
     } catch (e: any) {
       console.error("Update failed:", e);
-      toast.error(e.message || "Failed to update status");
+      toast.error("Failed to update status");
     }
   };
 
-  // --- 3. Subscriptions ---
+  // --- 3. Handle POD Upload (FIXED) ---
+  const handlePODUpload = async (file: File) => {
+    if (!selectedDeliveryId || !driverId) {
+      toast.error("Error: No delivery selected");
+      return;
+    }
+
+    try {
+      // FIX: Fetch the 'user_id' associated with this driver first
+      // The 'pod_images' table requires a user_id (logistics_users), NOT the driver_id (drivers table)
+      const { data: driverData, error: driverError } = await supabase
+        .from('drivers')
+        .select('user_id')
+        .eq('id', driverId)
+        .single();
+
+      if (driverError || !driverData) {
+        throw new Error("Could not verify driver identity for upload.");
+      }
+
+      const authorizedUserId = driverData.user_id;
+
+      // A. Upload Image
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${selectedDeliveryId}/${Date.now()}.${fileExt}`;
+      const filePath = `${driverId}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('delivery-proofs')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // B. Save Reference using the CORRECT authorizedUserId
+      const { error: dbError } = await supabase
+        .from('pod_images')
+        .insert({
+          delivery_id: selectedDeliveryId,
+          storage_path: filePath,
+          image_type: 'package',
+          uploaded_by: authorizedUserId, // <--- Fixed: Uses User ID now
+          latitude: driverLocation?.[0],
+          longitude: driverLocation?.[1]
+        });
+
+      if (dbError) throw dbError;
+
+      toast.success("Proof of Delivery uploaded!");
+      setSelectedDeliveryId(null); 
+
+    } catch (error: any) {
+      console.error("POD Upload Error:", error);
+      toast.error("Upload failed: " + error.message);
+      throw error; 
+    }
+  };
+
+  // --- 4. Subscriptions & GPS ---
   useEffect(() => {
     if (!driverId) return;
     fetchDriverDeliveries(driverId);
@@ -181,7 +228,6 @@ export function DriverDashboard({
     return () => { supabase.removeChannel(channel); };
   }, [driverId, fetchDriverDeliveries]);
 
-  // --- 4. GPS Tracking ---
   useGPSUploader(driverId);
 
   useEffect(() => {
@@ -203,13 +249,12 @@ export function DriverDashboard({
     return () => { supabase.removeChannel(channel); };
   }, [driverId]);
 
-  // --- 5. Full Route Optimization ---
+  // --- 5. Routing Logic ---
   const createDriverRoutes = useCallback(async () => {
     if (!driverId || !driverLocation || deliveries.length === 0) {
       setDriverRoutes([]);
       return;
     }
-
     try {
       const activeDeliveries = deliveries.filter(d => ['assigned', 'picked_up', 'in-transit'].includes(d.status));
       const completedDeliveries = deliveries.filter(d => d.status === 'delivered');
@@ -254,10 +299,8 @@ export function DriverDashboard({
     }
   }, [driverId, driverLocation, deliveries]);
 
-  // --- 6. Active Point-to-Point Routing ---
   useEffect(() => {
     createDriverRoutes();
-
     if (!driverId || !driverLocation || deliveries.length === 0) {
       setRoutePath([]);
       setActiveDestination(null);
@@ -317,6 +360,7 @@ export function DriverDashboard({
     <div className={isDarkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[#F6F7F8] dark:bg-[#222B2D]">
         
+        {/* Header */}
         <header className="sticky top-0 z-10 bg-white dark:bg-[#1a2123] border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Truck className="w-6 h-6 text-[#27AE60]" />
@@ -336,16 +380,14 @@ export function DriverDashboard({
           </div>
         </header>
 
+        {/* Main Content */}
         <main className="p-4 space-y-4">
           {selectedDelivery ? (
             <DriverDeliveryDetail
               delivery={selectedDelivery}
               onBack={() => setSelectedDeliveryId(null)}
-              onUpdateStatus={(s, reason) => {
-                updateStatusInDb(selectedDelivery.id, s, reason);
-                setSelectedDeliveryId(null);
-              }}
-              onUploadPOD={() => onUploadPOD(selectedDelivery.id)}
+              onUpdateStatus={(s, reason) => updateStatusInDb(selectedDelivery.id, s, reason)}
+              onUploadPOD={handlePODUpload} 
             />
           ) : (
             <>
@@ -356,18 +398,14 @@ export function DriverDashboard({
                     <MapContainer center={driverLocation || [14.5995, 120.9842]} zoom={13} style={{ height: "100%", width: "100%" }} whenReady={(map) => (mapRef.current = map)}>
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OpenStreetMap" />
                       <PanToDriver location={driverLocation} />
-                      
                       {driverLocation && <Marker position={driverLocation} icon={defaultIcon}><Popup>You</Popup></Marker>}
-                      
                       {activeDestination && (
                          <Marker position={[activeDestination.lat, activeDestination.lng]} icon={L.divIcon({ className: "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow", iconSize: [16, 16] })}>
                            <Popup>Next Stop</Popup>
                          </Marker>
                       )}
-
                       {routePath.length > 0 && <Polyline positions={routePath} color="#3B82F6" weight={5} opacity={0.8} />}
                     </MapContainer>
-
                     {activeDestination && (
                        <div className="absolute bottom-4 left-4 right-4 bg-white/90 p-3 rounded shadow z-[1000] text-xs border flex justify-between">
                          <span><strong>Next Stop:</strong> Routing Active</span>

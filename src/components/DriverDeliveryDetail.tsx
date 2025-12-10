@@ -4,9 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   MapPin, Phone, Package, CheckCircle2, XCircle, Camera,
   ArrowLeft, DollarSign, Navigation, ArrowUpFromLine,
-  ArrowDownToLine, CalendarClock, Ban
+  ArrowDownToLine, CalendarClock, Ban, UploadCloud, Trash2, Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -44,9 +44,9 @@ export interface Delivery {
 interface DriverDeliveryDetailProps {
   delivery: Delivery;
   onBack: () => void;
-  // This prop passes the data BACK to the dashboard
   onUpdateStatus: (status: DeliveryStatus, reason?: string) => void;
-  onUploadPOD: () => void;
+  // UPDATED: Now accepts a file argument for uploading
+  onUploadPOD: (file: File) => Promise<void>; 
 }
 
 export function DriverDeliveryDetail({
@@ -56,6 +56,12 @@ export function DriverDeliveryDetail({
   onUploadPOD,
 }: DriverDeliveryDetailProps) {
   const [viewState, setViewState] = useState<"normal" | "failed_menu" | "return_reasons">("normal");
+  
+  // --- POD STATE ---
+  const [podFile, setPodFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleNavigate = () => {
     const url = `https://www.google.com/maps/dir/?api=1&destination=${delivery.latitude},${delivery.longitude}`;
@@ -83,6 +89,39 @@ export function DriverDeliveryDetail({
   const handleFinalReturn = (reason: string) => {
     onUpdateStatus("returned", reason);
     setViewState("normal");
+  };
+
+  // --- POD HANDLERS ---
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setPodFile(file);
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    }
+  };
+
+  const triggerCamera = () => {
+    fileInputRef.current?.click();
+  };
+
+  const clearPOD = () => {
+    setPodFile(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const submitPOD = async () => {
+    if (!podFile) return;
+    setIsUploading(true);
+    try {
+      await onUploadPOD(podFile);
+      clearPOD(); // Clear after success
+    } catch (error) {
+      console.error("Upload failed", error);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const isReturnPickup = delivery.type === "return_pickup";
@@ -240,10 +279,61 @@ export function DriverDeliveryDetail({
           </Card>
         )}
 
+        {/* --- PROOF OF DELIVERY SECTION --- */}
         {(delivery.status === "delivered" || delivery.status === "returned") && (
-          <Button variant="outline" className="w-full h-12" onClick={onUploadPOD}>
-            <Camera className="w-5 h-5 mr-2" /> Upload Photo Proof
-          </Button>
+          <div className="space-y-3">
+            {/* Hidden Input for Camera/File */}
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment" // Forces rear camera on mobile
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
+            {!podFile ? (
+              <Button variant="outline" className="w-full h-12 border-dashed border-2" onClick={triggerCamera}>
+                <Camera className="w-5 h-5 mr-2" /> 
+                {isReturnPickup ? "Take Photo of Item" : "Take Proof of Delivery"}
+              </Button>
+            ) : (
+              <Card className="border-0 shadow-sm overflow-hidden bg-gray-50">
+                <div className="relative h-48 w-full bg-black">
+                  <img 
+                    src={previewUrl!} 
+                    alt="POD Preview" 
+                    className="h-full w-full object-contain" 
+                  />
+                  <Button 
+                    size="icon" 
+                    variant="destructive" 
+                    className="absolute top-2 right-2 rounded-full h-8 w-8"
+                    onClick={clearPOD}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="p-3">
+                  <Button 
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white" 
+                    onClick={submitPOD}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4 mr-2" /> Confirm Upload
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </Card>
+            )}
+          </div>
         )}
       </div>
     </div>

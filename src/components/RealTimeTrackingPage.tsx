@@ -652,11 +652,11 @@ export function RealTimeTrackingPage() {
         </Card>
 
         {/* Map & Details */}
-        <div className="lg:col-span-2 space-y-6 z=0">
+        <div className="lg:col-span-2 space-y-6">
           {/* Map Card */}
           <Card>
             <CardContent className="p-0">
-              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-visible z-0">
+              <div className="relative h-[400px] bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden isolate z-0">
                 <MapContainer
                   center={
                     selectedDriver?.location
@@ -664,15 +664,14 @@ export function RealTimeTrackingPage() {
                       : [14.5995, 120.9842]
                   }
                   zoom={13}
-                  style={{ height: "400px", width: "100%" }}
+                  style={{ height: "400px", width: "100%", zIndex: 0 }}
                 >
                   <TileLayer
-                    className = "z-1"
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
 
-                  <PanToSelectedDriver selectedDriver={selectedDriver} />
+                  <PanToSelectedDriver selectedDriver={selectedDriver}  />
                   
                   {/* Route Path */}
                   {routePath.length > 0 && (

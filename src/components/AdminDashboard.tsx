@@ -1,17 +1,14 @@
 import { useEffect, useState, useRef } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import { Package, Truck, CheckCircle2, RotateCcw, UserPlus, MapPin, Users, Navigation } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Package, Truck, CheckCircle2, RotateCcw, Users, Navigation, TrendingUp } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css"; // Ensure this import remains here
+import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { supabase } from "../utils/supabase/client";
-import { AssignDriverModal } from "./AssignDriverModal";
-import { toast } from "sonner";
 
 // --- Interfaces ---
 
@@ -61,7 +58,6 @@ interface DriverOption {
 
 // --- Helpers ---
 
-// Fix Leaflet Icons
 const DefaultIcon = L.icon({
   iconUrl: markerIcon,
   shadowUrl: markerShadow,
@@ -95,21 +91,17 @@ const getDriverIcon = (driver: Driver) => {
   });
 };
 
-// ✅ FIX: Enhanced Map Controller
 function MapController({ selectedDriver }: { selectedDriver: Driver | null }) {
   const map = useMap();
 
-  // 1. Force Map Resize on Mount (Fixes Grey Box)
   useEffect(() => {
     map.invalidateSize();
-    // Safety check: try again after a short delay
     const timer = setTimeout(() => {
       map.invalidateSize();
     }, 200);
     return () => clearTimeout(timer);
   }, [map]);
 
-  // 2. Handle FlyTo Logic
   useEffect(() => {
     if (selectedDriver?.location) {
       map.flyTo([selectedDriver.location.lat, selectedDriver.location.lng], 14, {
@@ -130,12 +122,8 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
   
   const [pendingDeliveries, setPendingDeliveries] = useState<PendingDelivery[]>([]);
   const [availableDrivers, setAvailableDrivers] = useState<DriverOption[]>([]);
-  
-  // Modal State
-  const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [selectedDelivery, setSelectedDelivery] = useState<PendingDelivery | null>(null);
+  const [returnCount, setReturnCount] = useState(0); // Added State for Returns
 
-  // Routing State
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number, address: string} | null>(null);
 
@@ -143,9 +131,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
 
   const selectedDriver = drivers.find(d => d.id === selectedDriverId) || null;
 
-  // =================================================================
-  // 1. FETCH DRIVERS & REALTIME UPDATES
-  // =================================================================
+  // 1. FETCH DRIVERS
   useEffect(() => {
     const fetchDrivers = async () => {
       const { data, error } = await supabase
@@ -177,11 +163,10 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // =================================================================
-  // 2. FETCH PENDING ORDERS & DRIVER OPTIONS
-  // =================================================================
+  // 2. FETCH PENDING & RETURNS
   useEffect(() => {
-    const fetchPending = async () => {
+    const fetchStatsAndOrders = async () => {
+      // Pending
       const { data } = await supabase
         .from('deliveries')
         .select('id, ref_no, customer_name, address, payment_type, status, assigned_driver, created_at, latitude, longitude')
@@ -190,6 +175,14 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
         .limit(5);
       
       setPendingDeliveries(data as unknown as PendingDelivery[] || []);
+
+      // Returns Count
+      const { count } = await supabase
+        .from('deliveries')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'returned');
+      
+      setReturnCount(count || 0);
     };
 
     const fetchOptions = async () => {
@@ -210,13 +203,11 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
       }
     };
 
-    fetchPending();
+    fetchStatsAndOrders();
     fetchOptions();
   }, []);
 
-  // =================================================================
   // 3. AUTO-GEOCODING
-  // =================================================================
   useEffect(() => {
     const runBatchGeocode = async () => {
       const { data } = await supabase.from("deliveries").select("id, address").is('latitude', null).limit(5);
@@ -239,9 +230,7 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     runBatchGeocode();
   }, []);
 
-  // =================================================================
   // 4. ROUTING LOGIC
-  // =================================================================
   useEffect(() => {
     setRoutePath([]);
     setActiveDestination(null);
@@ -296,48 +285,24 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
     calculateRoute();
   }, [selectedDriverId, drivers]);
 
-  // --- Handlers ---
-  const handleAssignDriver = (delivery: PendingDelivery) => {
-    setSelectedDelivery(delivery);
-    setAssignModalOpen(true);
-  };
-
-  const handleDriverAssigned = async (driverId: string) => {
-    if (!selectedDelivery) return;
-    
-    const { error } = await supabase.from('deliveries').update({
-      assigned_driver: driverId,
-      status: 'assigned',
-      assigned_at: new Date().toISOString()
-    }).eq('id', selectedDelivery.id);
-
-    if (!error) {
-      setPendingDeliveries(prev => prev.filter(d => d.id !== selectedDelivery.id));
-      setAssignModalOpen(false);
-      setSelectedDelivery(null);
-      toast.success("Driver assigned successfully");
-    } else {
-      toast.error("Failed to assign driver");
-    }
-  };
-
   const deliveryStatusData = [
     { name: "Completed", value: stats.completedDeliveries, color: "#27AE60" },
     { name: "In Transit", value: stats.activeDeliveries, color: "#3498DB" },
     { name: "Pending", value: stats.pendingOrders, color: "#F39C12" },
-    { name: "Returns", value: stats.returns, color: "#E74C3C" },
+    { name: "Returns", value: returnCount, color: "#E74C3C" }, // Updated to use returnCount
   ];
 
+  // Updated KPI Cards to include Returns
   const kpiCards = [
     { title: "Online Drivers", value: availableDrivers.length, icon: Users, color: "text-purple-600", bgColor: "bg-purple-50 dark:bg-purple-900/20" },
     { title: "Pending Orders", value: stats.pendingOrders, icon: Package, color: "text-orange-600", bgColor: "bg-orange-50 dark:bg-orange-900/20" },
     { title: "Active Deliveries", value: stats.activeDeliveries, icon: Truck, color: "text-blue-600", bgColor: "bg-blue-50 dark:bg-blue-900/20" },
-    { title: "Completed", value: stats.completedDeliveries, icon: CheckCircle2, color: "text-[#27AE60]", bgColor: "bg-green-50 dark:bg-green-900/20" },
+    { title: "Returns", value: returnCount, icon: RotateCcw, color: "text-red-600", bgColor: "bg-red-50 dark:bg-red-900/20" },
   ];
 
   return (
     <div className="space-y-6">
-      {/* ✅ FIX: Force Leaflet Container Height via internal style */}
+      {/* Force Leaflet Container Height */}
       <style>{`
         .leaflet-container {
           width: 100%;
@@ -423,12 +388,11 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-               {/* ✅ FIX: Container with Explicit Height & z-index Isolation */}
-               <div className="h-[500px] w-full relative z-0 isolation-auto">
+               {/* Container with Explicit Height & z-index Isolation */}
+               <div className="h-[500px] w-full relative z-0 isolation-auto rounded-b-lg overflow-hidden">
                   <MapContainer
                     center={selectedDriver?.location ? [selectedDriver.location.lat, selectedDriver.location.lng] : [14.5995, 120.9842]}
                     zoom={12}
-                    // ✅ FIX: Inline styles on MapContainer are the safest bet
                     style={{ height: "100%", width: "100%", minHeight: "365px" }}
                     whenReady={(map) => {
                         mapRef.current = map;
@@ -437,22 +401,18 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
                   >
                     <TileLayer className="z-1" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OpenStreetMap" />
                     
-                    {/* Controller to handle map resizing and panning */}
                     <MapController selectedDriver={selectedDriver} />
 
-                    {/* 1. Route Polyline */}
                     {routePath.length > 0 && (
                       <Polyline positions={routePath} color="#3B82F6" weight={5} opacity={0.7} />
                     )}
 
-                    {/* 2. Destination Marker */}
                     {activeDestination && (
                       <Marker position={[activeDestination.lat, activeDestination.lng]} icon={L.divIcon({ className: "bg-red-600 w-4 h-4 rounded-full border-2 border-white shadow-md", iconSize: [16, 16] })}>
                         <Popup>Destination: {activeDestination.address}</Popup>
                       </Marker>
                     )}
 
-                    {/* 3. Driver Markers */}
                     {drivers.map((driver) => {
                       if (!driver.location) return null;
                       return (
@@ -472,7 +432,6 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
                     })}
                   </MapContainer>
                   
-                  {/* Route Overlay Info */}
                   {activeDestination && (
                     <div className="absolute bottom-4 left-4 right-4 bg-white/90 p-3 rounded-lg shadow-lg z-[1000] border text-xs flex justify-between items-center max-w-md">
                         <div>
