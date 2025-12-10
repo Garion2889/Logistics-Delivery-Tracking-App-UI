@@ -39,7 +39,14 @@ export function AssignDriverModal({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null);
 
-  const filteredDrivers = drivers.filter((driver) =>
+  const filteredDrivers = drivers
+  .filter(
+    (driver) =>
+      !["assigned", "picked_up", "in_transit"].includes(
+        (driver as any).status // backend status coming from DB
+      )
+  )
+  .filter((driver) =>
     driver.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
