@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Badge } from "./ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -10,19 +10,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "./ui/table";
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./ui/select";
+} from "@/components/ui/select";
 import {
   Eye,
   UserPlus,
-  Edit,
-  CheckCircle2,
   Search,
   Filter,
 } from "lucide-react";
@@ -49,8 +47,6 @@ export function DeliveryManagement({
   deliveries,
   onViewDelivery,
   onAssignDriver,
-  onUpdateDelivery,
-  onMarkComplete,
 }: DeliveryManagementProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -63,7 +59,7 @@ export function DeliveryManagement({
       delivered: { label: "Delivered", className: "bg-green-100 text-green-700" },
       returned: { label: "Returned", className: "bg-red-100 text-red-700" },
     };
-    const variant = variants[status];
+    const variant = variants[status] || variants.pending; // Fallback to pending
     return (
       <Badge className={variant.className} variant="outline">
         {variant.label}
@@ -71,12 +67,17 @@ export function DeliveryManagement({
     );
   };
 
+  // --- FIXED SEARCH LOGIC ---
   const filteredDeliveries = deliveries.filter((delivery) => {
+    const query = searchTerm.toLowerCase();
+    
+    // 1. Safe Search: Handle null/undefined values gracefully
     const matchesSearch =
-      delivery.refNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      delivery.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      delivery.address.toLowerCase().includes(searchTerm.toLowerCase());
+      (delivery.refNo?.toLowerCase() || "").includes(query) ||
+      (delivery.customer?.toLowerCase() || "").includes(query) ||
+      (delivery.address?.toLowerCase() || "").includes(query);
 
+    // 2. Status Filter
     const matchesStatus = statusFilter === "all" || delivery.status === statusFilter;
 
     return matchesSearch && matchesStatus;
@@ -142,44 +143,52 @@ export function DeliveryManagement({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDeliveries.map((delivery) => (
-                  <TableRow key={delivery.id}>
-                    <TableCell>{delivery.refNo}</TableCell>
-                    <TableCell>{delivery.customer}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {delivery.address}
+                {filteredDeliveries.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center text-gray-500">
+                      No deliveries found matching your search.
                     </TableCell>
-                    <TableCell>{getStatusBadge(delivery.status)}</TableCell>
-                    <TableCell>
-                      {delivery.driver || (
-                        <span className="text-gray-400">Unassigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onViewDelivery(delivery)}
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                        {!delivery.driver && (
+                  </TableRow>
+                ) : (
+                  filteredDeliveries.map((delivery) => (
+                    <TableRow key={delivery.id}>
+                      <TableCell className="font-medium">{delivery.refNo}</TableCell>
+                      <TableCell>{delivery.customer}</TableCell>
+                      <TableCell className="max-w-xs truncate" title={delivery.address}>
+                        {delivery.address}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(delivery.status)}</TableCell>
+                      <TableCell>
+                        {delivery.driver || (
+                          <span className="text-gray-400 italic">Unassigned</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => onAssignDriver(delivery)}
-                            title="Assign Driver"
-                            className="text-[#27AE60]"
+                            onClick={() => onViewDelivery(delivery)}
+                            title="View Details"
                           >
-                            <UserPlus className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          {!delivery.driver && delivery.status === 'pending' && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onAssignDriver(delivery)}
+                              title="Assign Driver"
+                              className="text-[#27AE60] hover:text-[#219150] hover:bg-green-50"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -188,55 +197,62 @@ export function DeliveryManagement({
 
       {/* Mobile Card View */}
       <div className="md:hidden space-y-4">
-        {filteredDeliveries.map((delivery) => (
-          <Card key={delivery.id} className="border-0 shadow-sm">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[#222B2D] dark:text-white">
-                    {delivery.refNo}
-                  </p>
-                  <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                    {delivery.customer}
-                  </p>
+        {filteredDeliveries.length === 0 ? (
+           <div className="text-center py-8 text-gray-500">No deliveries found.</div>
+        ) : (
+          filteredDeliveries.map((delivery) => (
+            <Card key={delivery.id} className="border-0 shadow-sm">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium text-[#222B2D] dark:text-white">
+                      {delivery.refNo}
+                    </p>
+                    <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
+                      {delivery.customer}
+                    </p>
+                  </div>
+                  {getStatusBadge(delivery.status)}
                 </div>
-                {getStatusBadge(delivery.status)}
-              </div>
-              <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                {delivery.address}
-              </p>
-              <div className="flex items-center gap-2">
-                {delivery.driver && (
-                  <span className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                    Driver: {delivery.driver}
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onViewDelivery(delivery)}
-                  className="flex-1"
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  View
-                </Button>
-                {!delivery.driver && (
+                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
+                  {delivery.address}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Driver:</span>
+                  {delivery.driver ? (
+                    <span className="text-sm text-[#222B2D] dark:text-white">
+                      {delivery.driver}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400 italic">Unassigned</span>
+                  )}
+                </div>
+                <div className="flex gap-2 pt-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onAssignDriver(delivery)}
-                    className="flex-1 text-[#27AE60]"
+                    onClick={() => onViewDelivery(delivery)}
+                    className="flex-1"
                   >
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Assign
+                    <Eye className="w-4 h-4 mr-2" />
+                    View
                   </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+                  {!delivery.driver && delivery.status === 'pending' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onAssignDriver(delivery)}
+                      className="flex-1 text-[#27AE60] border-green-200 hover:bg-green-50"
+                    >
+                      <UserPlus className="w-4 h-4 mr-2" />
+                      Assign
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );

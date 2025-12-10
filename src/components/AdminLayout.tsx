@@ -52,7 +52,7 @@ export function AdminLayout({
     { id: "routes", label: "Route Optimization", icon: Route },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "returns", label: "Returns", icon: RotateCcw },
-    { id: "settings", label: "Settings", icon: Settings },
+    //{ id: "settings", label: "Settings", icon: Settings },
   ];
 
   const SidebarContent = () => (
