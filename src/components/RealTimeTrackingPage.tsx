@@ -123,7 +123,7 @@ export function RealTimeTrackingPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [locationHistory, setLocationHistory] = useState<LocationHistory[]>([]);
-  
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [playbackIndex, setPlaybackIndex] = useState(0);
@@ -249,6 +249,26 @@ export function RealTimeTrackingPage() {
       popupAnchor: [0, -35],
     });
   };
+useEffect(() => {
+  const fetchDeliveries = async () => {
+    try {
+      const { data, error } = await supabase.from('deliveries').select('*');
+
+      if (error) {
+        console.error('Error fetching deliveries:', error);
+        return;
+      }
+
+      if (data) {
+        setDeliveries(data);
+      }
+    } catch (err) {
+      console.error('Error in fetchDeliveries:', err);
+    }
+  };
+
+  fetchDeliveries();
+}, []);
 
   // --- 1. Fetch Drivers ---
   useEffect(() => {
@@ -587,7 +607,7 @@ export function RealTimeTrackingPage() {
                   In Transit
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {drivers.filter((d) => d.status === "on_delivery").length}
+                  {deliveries.filter((d) => d.status === "in_transit").length}
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -827,7 +847,7 @@ export function RealTimeTrackingPage() {
               <TabsContent value="performance">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Driver Performance - {selectedDriver.name}</CardTitle>
+                    <CardTitle>Driver Statistics - {selectedDriver.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {/* Route Progress */}
