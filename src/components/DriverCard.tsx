@@ -111,7 +111,7 @@ export function DriverCard({
           <Package className="w-3.5 h-3.5 text-[#27AE60] flex-shrink-0" />
           <span className="text-xs text-[#222B2D] dark:text-white">
             <span className="font-semibold">{driver.completedDeliveries}</span>{" "}
-            deliveries
+            Deliveries
           </span>
         </div>
 

@@ -22,6 +22,12 @@ interface Driver {
   activeDeliveries: number;
 }
 
+interface Deliveries {
+  id: string;
+  referenceNo: string;
+  status: string;
+  driverId?: string;
+}
 interface AssignDriverModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -44,6 +50,7 @@ export function AssignDriverModal({
     // 1. Logic to HIDE drivers with active deliveries or offline status
     // We only show drivers who are strictly "online" and available.
     .filter((driver) => driver.status === "online")
+    .filter((driver) => driver.activeDeliveries === 0)
     // 2. Search Logic
     .filter((driver) =>
       driver.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -64,8 +71,8 @@ export function AssignDriverModal({
         <DialogHeader>
           <DialogTitle>Assign Driver</DialogTitle>
           <DialogDescription>
-            Select an available driver to assign to delivery {deliveryRefNo}. 
-            (Only online drivers are shown)
+            Select an available driver to assign to delivery {deliveryRefNo}.
+            (Only online drivers with no active deliveries are shown)
           </DialogDescription>
         </DialogHeader>
 

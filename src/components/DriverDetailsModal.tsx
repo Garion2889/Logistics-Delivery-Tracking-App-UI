@@ -224,7 +224,7 @@ setStats({
                     <Package className="w-4 h-4 text-[#27AE60]" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400">Deliveries</p>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">Completed Deliveries</p>
                     <p className="text-sm font-semibold text-[#222B2D] dark:text-white leading-tight">
                       {stats.totalCompleted}
                     </p>
