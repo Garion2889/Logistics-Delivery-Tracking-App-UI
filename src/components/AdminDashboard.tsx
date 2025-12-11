@@ -349,7 +349,6 @@ export function AdminDashboard({ stats }: AdminDashboardProps) {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Delivery Status</CardTitle>
-                <div className="flex items-center gap-1 text-[#27AE60]"><span className="text-sm">{stats.successRate}% Success</span></div>
               </div>
             </CardHeader>
             <CardContent>
