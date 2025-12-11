@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   LayoutDashboard,
   Package,
@@ -24,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -44,6 +46,8 @@ export function AdminLayout({
   onToggleDarkMode,
   userEmail,
 }: AdminLayoutProps) {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
   const navItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "deliveries", label: "Deliveries", icon: Package },
@@ -87,14 +91,6 @@ export function AdminLayout({
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
               <span className="text-sm lg:text-base">{item.label}</span>
-              {item.badge && (
-                <Badge
-                  variant="destructive"
-                  className="ml-auto hidden sm:flex"
-                >
-                  {item.badge}
-                </Badge>
-              )}
             </button>
           );
         })}
@@ -162,7 +158,7 @@ export function AdminLayout({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={onLogout}
+                  onClick={() => setShowLogoutConfirm(true)}
                   className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 >
                   <LogOut className="w-5 h-5" />
@@ -175,6 +171,17 @@ export function AdminLayout({
           <main className="p-4 md:p-6 lg:p-8">{children}</main>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        title="Confirm Logout"
+        description="Are you sure you want to log out?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={onLogout}
+      />
     </div>
   );
 }
