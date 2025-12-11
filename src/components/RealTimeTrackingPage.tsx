@@ -579,7 +579,7 @@ useEffect(() => {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -612,24 +612,6 @@ useEffect(() => {
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
                 <Navigation className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[#222B2D]/60 dark:text-white/60">
-                  Total Distance
-                </p>
-                <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {drivers.reduce((sum, d) => sum + d.distance, 0).toFixed(1)} km
-                </h3>
-              </div>
-              <div className="w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-purple-600" />
               </div>
             </div>
           </CardContent>
