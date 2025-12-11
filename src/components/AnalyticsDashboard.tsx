@@ -98,8 +98,18 @@ export function AnalyticsDashboard() {
           const totalDeliveries = formattedTrendData.reduce((sum, d) => sum + d.total_deliveries, 0);
           const activeDeliveries = formattedTrendData.reduce((sum, d) => sum + d.active_deliveries, 0);
           const completedDeliveries = formattedTrendData.reduce((sum, d) => sum + d.completed_deliveries, 0);
+          
+          // Safe Division for Success Rate
           const successRate = totalDeliveries > 0 ? Math.round((completedDeliveries / totalDeliveries) * 100) : 0;
-          const avgDeliveryTime = formattedTrendData.reduce((sum, d) => sum + d.avg_delivery_time_minutes, 0) / formattedTrendData.length || 0;
+          
+          // Safe Average Calculation & Negative Number Prevention
+          let rawAvgTime = formattedTrendData.reduce((sum, d) => sum + d.avg_delivery_time_minutes, 0);
+          let avgDeliveryTime = rawAvgTime / formattedTrendData.length;
+
+          // FORCE POSITIVE: If data is garbage (negative) or NaN, show 0
+          if (avgDeliveryTime < 0 || isNaN(avgDeliveryTime)) {
+             avgDeliveryTime = 0;
+          }
 
           setKpiStats({
             total_deliveries: totalDeliveries,
@@ -108,6 +118,7 @@ export function AnalyticsDashboard() {
             avg_delivery_time_minutes: Math.round(avgDeliveryTime * 100) / 100, // Round to 2 decimal places
           });
         } else {
+          // Fallback for empty data
           setKpiStats({
             total_deliveries: 0,
             active_deliveries: 0,
@@ -123,7 +134,18 @@ export function AnalyticsDashboard() {
           .order('completed_deliveries', { ascending: false });
         
         if (driverError) console.error("Driver Error:", driverError);
-        setDriverStats(driverData || []);
+
+        // --- NEW FIX: Sanitize Driver Data ---
+        // We loop through the data and force any negative time to 0 before saving it to state.
+        const sanitizedDriverData = (driverData || []).map((driver: any) => ({
+            ...driver,
+            // Check if negative or NaN, force to 0
+            avg_delivery_time_minutes: (driver.avg_delivery_time_minutes < 0 || isNaN(driver.avg_delivery_time_minutes)) 
+                ? 0 
+                : driver.avg_delivery_time_minutes
+        }));
+
+        setDriverStats(sanitizedDriverData);
 
         // 4. Area Coverage (Mock for demo purposes)
         setAreaCoverage([
