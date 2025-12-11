@@ -442,9 +442,9 @@ const handleDeactivateDriver = async (driverId: string) => {
   id: d.id,
   name: d.name,
   email: d.email,
-  vehicle: d.vehicle_type || "Unknown", 
+  vehicle: d.vehicle_type || "Unknown",
   status: d.status,
-  activeDeliveries: 0, 
+  activeDeliveries: deliveries.filter(del => del.driver === d.name && (del.status === "assigned" || del.status === "in-transit")).length,
 });
 
   useEffect(() => {

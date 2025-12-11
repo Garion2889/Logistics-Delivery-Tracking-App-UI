@@ -63,53 +63,57 @@ export function DriverManagement({ isDarkMode = false }: DriverManagementProps) 
     
 
   useEffect(() => {
-  const fetchDrivers = async () => {
-    const { data, error } = await supabase
-  .from("drivers")
-  .select(`
-    *,
-    logistics_users:user_id (
-      email,
-      phone,
-      full_name
-    )
-  `)
-  .order("created_at", { ascending: true });
+    const fetchDrivers = async () => {
+      // 1. Update query to fetch the count from your deliveries table
+      // Note: Replace 'deliveries' with your actual table name if different (e.g., 'orders', 'assignments')
+      const { data, error } = await supabase
+        .from("drivers")
+        .select(`
+          *,
+          logistics_users:user_id (
+            email,
+            phone,
+            full_name
+          ),
+          deliveries:deliveries(count)
+        `)
+        .order("created_at", { ascending: true });
 
+      if (error) {
+        console.error("Error fetching drivers:", error);
+        toast.error("Failed to load drivers");
+        return;
+      }
 
-    if (error) {
-      console.error("Error fetching drivers:", error);
-      toast.error("Failed to load drivers");
-      return;
-    }
+      if (data) {
+        const normalized = data.map((d: any) => ({
+          id: d.id,
+          name: d.logistics_users?.full_name ?? d.name ?? "Unnamed Driver",
+          email: d.logistics_users?.email ?? "",
+          phone: d.logistics_users?.phone ?? "",
+          status: d.status ?? "offline",
+          rating: d.rating ?? 5.0, // Default to 5 if null
+          
+          // 2. Map the count returned by Supabase to the property
+          // Supabase returns count as an array of objects: [{ count: 5 }]
+          completedDeliveries: d.deliveries?.[0]?.count ?? 0,
+          
+          vehicle: d.vehicle_type ?? "",
+          license: d.license_number ?? "",
+          avatar: "",
+          isDeactivated: d.is_active === false,
+          deactivatedAt: null,
+          deactivationReason: null,
+        }));
 
-    if (!data) return;
+        setDrivers(normalized);
+      }
+    };
 
-    // Normalize fields so DriverCard never crashes
-  if (data) {
-    const normalized = data.map((d: any) => ({
-      id: d.id,
-      name: d.logistics_users?.full_name ?? d.name ?? "Unnamed Driver",
-      email: d.logistics_users?.email ?? "",
-      phone: d.logistics_users?.phone ?? "",
-      status: d.status ?? "offline",
-      rating: 0, // your DB doesn't have rating
-      completedDeliveries: 0, // your DB doesn't have this
-      vehicle: d.vehicle_type ?? "",
-      license: d.license_number ?? "",
-      avatar: "",
-      isDeactivated: d.is_active === false,
-      deactivatedAt: null,
-      deactivationReason: null,
-    }));
-
-  setDrivers(normalized);
-  }
-  };
-
-  fetchDrivers();
+    fetchDrivers();
   }, []);
 
+  
  const activeDrivers = drivers;
 
   // Apply filters to active drivers only

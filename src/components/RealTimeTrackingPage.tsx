@@ -61,8 +61,9 @@ interface Driver {
   totalStops: number;
   distance: number;
   eta: string;
-  speed: number;
   lastUpdate: string;
+  speed?: number; // Added optional speed field to match usage
+  record_at?: string; // Added optional record_at to match usage
 }
 
 interface LocationHistory {
@@ -70,6 +71,7 @@ interface LocationHistory {
   driver_id?: string;
   lat: number;
   lng: number;
+  speed: number;
   recorded_at: string;
 }
 
@@ -121,7 +123,7 @@ export function RealTimeTrackingPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [locationHistory, setLocationHistory] = useState<LocationHistory[]>([]);
-  
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [filterStartDate, setFilterStartDate] = useState<string>("");
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [playbackIndex, setPlaybackIndex] = useState(0);
@@ -152,7 +154,7 @@ export function RealTimeTrackingPage() {
     setPlaybackIndex(0);
     setRoutePath([]);
     setActiveDestination(null);
-  }, [selectedDriver]);
+  }, [selectedDriver?.id]); // Only reset if ID changes
 
   // Current location for map marker highlight
   const currentPlaybackLocation = locationHistory[playbackIndex];
@@ -187,6 +189,7 @@ export function RealTimeTrackingPage() {
           {
             lat: data.recorded.lat, 
             lng: data.recorded.lng, 
+            speed: 0,
             recorded_at: data.recorded.recorded_at,
           },
           ...prev,
@@ -246,6 +249,26 @@ export function RealTimeTrackingPage() {
       popupAnchor: [0, -35],
     });
   };
+useEffect(() => {
+  const fetchDeliveries = async () => {
+    try {
+      const { data, error } = await supabase.from('deliveries').select('*');
+
+      if (error) {
+        console.error('Error fetching deliveries:', error);
+        return;
+      }
+
+      if (data) {
+        setDeliveries(data);
+      }
+    } catch (err) {
+      console.error('Error in fetchDeliveries:', err);
+    }
+  };
+
+  fetchDeliveries();
+}, []);
 
   // --- 1. Fetch Drivers ---
   useEffect(() => {
@@ -256,27 +279,49 @@ export function RealTimeTrackingPage() {
           console.error('Error fetching drivers:', error);
           return;
         }
+
         if (data) {
-          const formattedDrivers: Driver[] = data.map((d: any) => ({
-            ...d,
-            location: d.last_lat && d.last_lng ? { lat: d.last_lat, lng: d.last_lng } : null,
-            lastUpdate: d.last_location_update ? new Date(d.last_location_update).toLocaleTimeString() : "Unknown",
-            speed: 0,
-            distance: 0,
-            completedStops: 0,
-            totalStops: 0,
-            eta: "N/A",
-            currentRoute: ""
-          }));
-          
-          setDrivers(formattedDrivers);
-          
-          // Select first driver if none selected
-          const driverWithLocation = formattedDrivers.find(d => d.last_location_update !== null);
-          if (driverWithLocation && !selectedDriver) {
-            setSelectedDriver(driverWithLocation);
-          }
+          const driversWithLocation = await Promise.all(
+            data.map(async (d) => {
+              const { data: latestLoc } = await supabase
+                .from("driver_locations")
+                .select("*")
+                .eq("driver_id", d.id)
+                .order("recorded_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              return {
+                ...d,
+                location: latestLoc?.latitude && latestLoc?.longitude
+                  ? { lat: latestLoc.latitude, lng: latestLoc.longitude }
+                  : null,
+                lastUpdate: latestLoc
+                  ? new Date(latestLoc.recorded_at).toLocaleTimeString()
+                  : "Unknown",
+                speed: latestLoc?.speed != null 
+                  ? parseFloat((latestLoc.speed / 1000).toFixed(3)) // Convert m/s to km/h usually, or keep if already km/h
+                  : 0,
+                record_at: latestLoc?.recorded_at,
+                distance: 0,
+                completedStops: 0,
+                totalStops: 0,  
+                eta: "N/A",
+                currentRoute: "",
+              };
+            })
+          );
+
+          setDrivers(driversWithLocation);
+
+          const driverWithLocation = driversWithLocation.find(
+            d => d.last_location_update !== null || d.location !== null
+          );
+
+          // Only set initial driver if none selected
+          setSelectedDriver(prev => prev ? prev : (driverWithLocation || null));
         }
+
       } catch (err) {
         console.error('Error in fetchDrivers:', err);
       }
@@ -315,6 +360,7 @@ export function RealTimeTrackingPage() {
         const formatted = data.map((row: any) => ({
           lat: row.lat,
           lng: row.lng,
+          speed: 0, // Default if not in history
           recorded_at: row.recorded_at,
         }));
         setLocationHistory(formatted);
@@ -334,13 +380,11 @@ export function RealTimeTrackingPage() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [selectedDriver, filterStartDate, filterEndDate, isPlaying]);
+  }, [selectedDriver?.id, filterStartDate, filterEndDate, isPlaying]);
 
 
   // =================================================================
-  // ✅ CONSOLIDATED ROUTING LOGIC
-  // Combines logic from previous duplicate effects to handle
-  // active jobs, geocoding, database updates, and OSRM routing.
+  // ✅ ROUTING & ETA CALCULATION LOGIC (FIXED)
   // =================================================================
   useEffect(() => {
     if (!selectedDriver) {
@@ -357,11 +401,13 @@ export function RealTimeTrackingPage() {
         .eq('assigned_driver', selectedDriver.id)
         .in('status', ['in_transit', 'picked_up', 'assigned'])
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (!activeJob) {
         setRoutePath([]);
         setActiveDestination(null);
+        // Reset info if no job
+        setSelectedDriver(prev => prev ? ({ ...prev, eta: "N/A", currentRoute: "Idle", distance: 0 }) : null);
         return;
       }
 
@@ -416,22 +462,54 @@ export function RealTimeTrackingPage() {
           const json = await res.json();
 
           if (json.code === 'Ok' && json.routes && json.routes[0]) {
-            // OSRM returns [lng, lat], Leaflet needs [lat, lng]
-            const path = json.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+            const route = json.routes[0];
+            
+            // Draw Polyline
+            const path = route.geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
             setRoutePath(path);
+
+            // --- 🟢 FIX: CALCULATE ETA & DISTANCE ---
+            const durationSec = route.duration; // Seconds
+            const distanceMeters = route.distance; // Meters
+
+            // Format ETA Time
+            const now = new Date();
+            const arrivalTime = new Date(now.getTime() + durationSec * 1000);
+            const arrivalString = arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            // Format Duration (e.g., 25 min)
+            const minutesTotal = Math.round(durationSec / 60);
+            let durationLabel = `${minutesTotal} min`;
+            if (minutesTotal >= 60) {
+                const h = Math.floor(minutesTotal / 60);
+                const m = minutesTotal % 60;
+                durationLabel = `${h} hr ${m} min`;
+            }
+
+            // Update local driver state
+            setSelectedDriver(prev => {
+                if(!prev) return null;
+                return {
+                    ...prev,
+                    currentRoute: `Delivery to: ${activeJob.address}`,
+                    distance: parseFloat((distanceMeters / 1000).toFixed(1)), // meters -> km
+                    eta: `${arrivalString} (${durationLabel})`
+                };
+            });
+
           } else {
-            console.warn("OSRM NoRoute or Error:", json.message);
-            setRoutePath([[startLat, startLng], [destLat, destLng]]); // Fallback line
+            setRoutePath([[startLat, startLng], [destLat, destLng]]); // Fallback straight line
+            setSelectedDriver(prev => prev ? ({ ...prev, eta: "Calc Error", currentRoute: activeJob.address }) : null);
           }
         } catch (e: any) {
-          console.warn("Routing fallback used due to error:", e.name);
-          setRoutePath([[startLat, startLng], [destLat, destLng]]); // Fallback line
+          console.warn("Routing error:", e.name);
+          setRoutePath([[startLat, startLng], [destLat, destLng]]);
         }
       }
     };
 
     calculateRoute();
-  }, [selectedDriver]); // Re-run when driver changes or their DB record updates
+  }, [selectedDriver?.location?.lat, selectedDriver?.location?.lng, selectedDriver?.id]); 
 
   // --- Filtering ---
   const filteredDrivers = drivers.filter((driver) => {
@@ -529,7 +607,7 @@ export function RealTimeTrackingPage() {
                   In Transit
                 </p>
                 <h3 className="text-[#222B2D] dark:text-white mt-1">
-                  {drivers.filter((d) => d.status === "on_delivery").length}
+                  {deliveries.filter((d) => d.status === "in_transit").length}
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -769,7 +847,7 @@ export function RealTimeTrackingPage() {
               <TabsContent value="performance">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Driver Performance - {selectedDriver.name}</CardTitle>
+                    <CardTitle>Driver Statistics - {selectedDriver.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {/* Route Progress */}
@@ -788,7 +866,7 @@ export function RealTimeTrackingPage() {
                             style={{
                               width: `${
                                 (selectedDriver.completedStops /
-                                  selectedDriver.totalStops) *
+                                  Math.max(selectedDriver.totalStops, 1)) * // Avoid /0
                                 100
                               }%`,
                             }}
@@ -828,7 +906,9 @@ export function RealTimeTrackingPage() {
                           Last Update
                         </p>
                         <p className="text-[#222B2D] dark:text-white">
-                          {selectedDriver.lastUpdate}
+                          {selectedDriver.record_at
+    ? new Date(selectedDriver.record_at).toLocaleString()
+    : "Unknown"}
                         </p>
                       </div>
                     </div>

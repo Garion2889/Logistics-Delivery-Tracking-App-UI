@@ -2,17 +2,18 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { DriverDeliveryDetail, Delivery, DeliveryStatus } from "@/components/DriverDeliveryDetail"; 
+import { DriverDeliveryDetail, Delivery, DeliveryStatus } from "@/components/DriverDeliveryDetail";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-import { useGPSUploader } from "../drivermaptracker/gpsTracker"; 
+import { useGPSUploader } from "../drivermaptracker/gpsTracker";
 import { Truck, User, LogOut, Moon, Sun, Navigation, MapPin } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { supabase } from "../utils/supabase/client"; 
+import { supabase } from "../utils/supabase/client";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 // --- Map Icons ---
 const defaultIcon = L.icon({
@@ -65,6 +66,7 @@ export function DriverDashboard({
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [activeDestination, setActiveDestination] = useState<{lat: number, lng: number} | null>(null);
   const [driverRoutes, setDriverRoutes] = useState<DriverRoute[]>([]);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
   // --- Helpers ---
@@ -339,7 +341,7 @@ export function DriverDashboard({
             <Button variant="ghost" size="icon" onClick={onToggleDarkMode}>
                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={onLogout} className="text-red-600">
+            <Button variant="ghost" size="icon" onClick={() => setShowLogoutConfirm(true)} className="text-red-600">
                <LogOut className="w-5 h-5" />
             </Button>
           </div>
@@ -422,6 +424,17 @@ export function DriverDashboard({
           )}
         </main>
       </div>
+
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        title="Confirm Logout"
+        description="Are you sure you want to log out?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={onLogout}
+      />
     </div>
   );
 }
